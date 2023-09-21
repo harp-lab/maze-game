@@ -9,8 +9,7 @@ RUN apt-get update && apt-get install -y \
     libboost-all-dev \
     ghostscript \
     python3 \
-    ffmpeg \
-    libmagick++-dev
+    ffmpeg 
 
 
 WORKDIR /root
