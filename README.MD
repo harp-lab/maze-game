@@ -46,3 +46,17 @@ A server that lets us create a maze based on a [text file](./mazepool/0.maze) wi
 - The max number of seconds for the simulation, is set to 99. There is a chance that search wouldn't be complete in those seconds, you can increase|decrease it, but keep it mind, the resource consumption and time to process will change relatively.
 - dfsbot.py can act as a template for agents, you can choose to use it as a base to make changes, or write one in another language based on it.
 - server writes the mp4 file to out.mp4, it clears the out.mp4 at the start of next run for the new out.mp4.
+
+### Docker Errors:
+If you face the following error on your Docker build
+```shell
+ => ERROR [internal] load metadata for docker.io/library/archlinux:latest 
+```
+Open the Dockerfile and change the line
+```shell
+from archlinux
+```
+to 
+```shell
+from ubuntu
+```
