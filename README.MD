@@ -1,27 +1,32 @@
 # Maze Game Server
-A server written in C++, that creates a maze based on a text file with co-ordinates of walls and sends out the current position of bot and the walls around it, and takes in co-ordinates for the bot to move to. Then captures and visualizes the movements of the bot into a video.
+A server that lets us create a maze based on a [text file](./mazepool/0.maze) with co-ordinates of walls and takes a command as an input and writes out the current position of bot and the walls around it to stdin, and reads in co-ordinates for the bot to move towards from stdout. Then captures and visualizes the movements of the bot into a video.
 
- 
+
 ![](maze.gif)
 
 ### Set-Up
 1. Two ways to run the project:
    * Locally after installing all the dependecies
+     * Install all the required dependencies, go to step 3.
    * In a docker container, using the Dockerfile in the repo, skip to step 4 after starting the container.
+     * `docker build -t maze-game .`
+     * `docker run --name=maze-game --detach maze-game`
+     * Then you can use vscode to [connect](https://code.visualstudio.com/docs/devcontainers/containers) to attach to the container, go to step 4.
+     * Or run `docker exec -it maze-game bash` to drop into bash inside the container, go to step 4.
 2. Dependencies
    * [GraphicsMagick](www.graphicsmagick.org)
    * [FFmpeg](https://ffmpeg.org/)
    * [clang](https://clang.llvm.org/)
    * [boost](https://www.boost.org/)
    * [ghostscript](https://www.ghostscript.com/)
-3. After the installing the required dependecies, clone the repo.
-4. run `make` to make the ./server executable
-5. run `make dfsbot` to create a visualization for a depth first search bot
+3. After installing the required dependencies, clone the repo.
+4. run `make` to make the ./server executable.
+5. run `make dfsbot` to create a visualization for a depth first search bot.
 
 ## Details
 -  server can be run with `./server 'program/agent to run'` and communicates with the program passed to it using std-in/out.
 -  sends the sense data and bot location over std-in to be read and processed by the agent/program.
--  The agent sends the direction for the bot to move on std-out, which will be read by the server and bot will be moved, updated location of the bot sent back to agent.
+-  The agent should write the direction for the bot to move towards to std-out, which will be read by the server and bot will be moved, updated location of the bot is sent back to agent.
 -  All the movements of the bot are captured into frames and stitched together into a video.
 
 ### Format of communication between server and agent
@@ -37,7 +42,7 @@ A server written in C++, that creates a maze based on a text file with co-ordina
   - `toward x y`
   - example: `toward 1.5 1.5`
 ### Server Defaults
-- Server defaults to the `./mazepool/0.maze`, you can pick another by changing the filename in `./maze-game-server.cpp` or rename the desired file to `0.maze`.
-- The number of seconds for the simulation, is set to 99. There is a chance that search wouldn't be complete in those seconds, you can increase|decrease it, but keep it mind, the resource consumption and time to process can change relatively.
-- dfsbot.py can act as a template for agents, you can choose to use it as a base for changes, or write one in another language based on it.
-- server write the mp4 file to out.mp4, it deletes the out.mp4 at the start of next run.
+- Server defaults to the `./mazepool/0.maze`, you can pick another by renaming the desired file to `0.maze` or changing the filename in `./maze-game-server.cpp`.
+- The max number of seconds for the simulation, is set to 99. There is a chance that search wouldn't be complete in those seconds, you can increase|decrease it, but keep it mind, the resource consumption and time to process will change relatively.
+- dfsbot.py can act as a template for agents, you can choose to use it as a base to make changes, or write one in another language based on it.
+- server writes the mp4 file to out.mp4, it clears the out.mp4 at the start of next run for the new out.mp4.
