@@ -16,8 +16,9 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <thread>
+#include <future>
 #include <boost/process.hpp>
-#include <boost/thread.hpp>
 #include <boost/lockfree/spsc_queue.hpp>
 
 using namespace std;
@@ -30,9 +31,9 @@ using namespace boost::process;
 #define renderW 2550
 #define renderH 2550
 
-#define frame_ms 500
+#define frame_ms 600
 #define frame_per_sec 18
-#define gamelimit_sec 99
+#define gamelimit_sec 90
 #define framelimit (gamelimit_sec*frame_per_sec)
 
 #define gameX(x) (15+x*((renderW-30.0)/tileW))
@@ -40,9 +41,12 @@ using namespace boost::process;
 
 #define Walls(x,y) (walls[((int)y)*(tileW+1)+(int)x])
 
-#define robot_r 0.32
+#define robot_r 0.3
 #define robot_maxv 1.8 / frame_per_sec
 #define robot_accel (robot_maxv/2.5)
+
+#define log_len 16
+#define log_char_len 24
 
 #define verbose true
 
@@ -136,31 +140,42 @@ public:
 
   void closestPoint(double ox, double oy, double& clx, double& cly)
   {
-    double lastdist = 9999.0;
-    for (int i = 0; i < 50; ++i)
+    double b0=0.0;
+    const double px0 = data[0];
+    const double py0 = data[1];
+    double d0 = (px0-ox)*(px0-ox)+(py0-oy)*(py0-oy);
+    double b1=1.0;
+    const double px1 = data[2];
+    const double py1 = data[3];
+    double d1 = (px1-ox)*(px1-ox)+(py1-oy)*(py1-oy);
+    
+    while (b1 > b0)
     {
-      double px = data[0] + i*(data[2]-data[0]);
-      double py = data[1] + i*(data[3]-data[1]);
-      clx = px;
-      cly = py;
-      double thisdist = sqrt((px-ox)*(px-ox)+(py-oy)*(py-oy));
-      if (thisdist < lastdist)
-	lastdist = thisdist;
+      const double mid = b0+(b1-b0)/2;   
+      const double px = data[0] + mid*(data[2]-data[0]);
+      const double py = data[1] + mid*(data[3]-data[1]);
+      const double d = (px-ox)*(px-ox)+(py-oy)*(py-oy);
+      if (d0 < d1)
+      {
+	b1 = mid;
+	d1 = d;
+      }
       else
-	return;
+      {
+	b0 = mid;
+	d0 = d;
+      }
     }
+    
+    clx = data[0] + b0*(data[2]-data[0]);
+    cly = data[1] + b0*(data[3]-data[1]);
   }
 
   bool withinRange(double ox, double oy, double r)
   {
-    for (int i = 0; i <= 50; ++i)
-    {
-      const double px = data[0] + i*(data[2]-data[0])/50.0;
-      const double py = data[1] + i*(data[3]-data[1])/50.0;
-      if ((px-ox)*(px-ox)+(py-oy)*(py-oy) <= r*r)
-	return true;
-    }
-    return false;
+    double cx,cy;
+    closestPoint(ox,oy,cx,cy);
+    return sqrt((cx-ox)*(cx-ox)+(cy-oy)*(cy-oy)) <= r;
   }
 
   string writeStatus()
@@ -201,25 +216,30 @@ public:
       // Undo last move
       x -= v*cos(a);
       y -= v*sin(a);
+      //v = 0;  // If we want to use a "stop" instead of "bounce" mechanic
       
       // Bounce mechanic
       double cx, cy;
       line->closestPoint(x,y,cx,cy);
-
-      // In this universe, we speed up
+      
       if (y-cy == 0 && x-cx == 0)
-	v = 0;
+	myerror("Bad collision.");
       else
       {
+	// I think I may have seen this get the bot stuck against a wall
+	// but don't believe this should be possible as we maintain the invariant
+	// of being in open-space by undoing a move that leads to a collision
+	// before altering the a and v for a "bounce". Could use further testing.
 	a = atan2(y-cy,x-cx);
-	v = v*0.45;
+	//cout << "Bounce angle: " << a << "; dx: " << cos(a) << "; dy: " << sin(a) << endl;
+	v *= 1.1;
       }
     }
   } 
   
   virtual void notify(Circle* circle)
   {
-    
+    myerror("Circle-circle collision.");
   }  
 
   double getA() { return a; }
@@ -249,7 +269,9 @@ private:
   int botframe;
   string name;
   double tx, ty;
-
+  vector<string> log;
+  int lognext;
+  
   // Subprocess-related members
   ipstream childout;
   opstream childin;
@@ -283,6 +305,7 @@ public:
     : Circle(_x, _y, robot_r, robot_maxv),
       greenbot{}, botframe(0), name(),
       tx(_x), ty(_y),
+      log(), lognext(0),
       childout(),
       childin(),
       proc(cmd.c_str(), std_out > childout, std_in < childin),
@@ -296,6 +319,8 @@ public:
       greenbot[i] = fullgreenbot;
       greenbot[i].crop(Geometry(128,128,i*128,0));
     }
+    for (int i = 0; i < log_len; ++i)
+      log.push_back("");
   }
   virtual ~Robot()
   {
@@ -304,6 +329,8 @@ public:
     childout.close();
     messenger.join();
   }
+
+  vector<string> getLog() { return log; }
 
   void drawTo(Image& canvas)
   {
@@ -377,6 +404,10 @@ public:
     {
       if (verbose)
 	cout << cmd << endl;
+      log[lognext] = cmd.substr(0, min(log_char_len, (int)cmd.size()));
+      lognext = (lognext+1) % log_len;
+      log[lognext] = "";
+      log[(lognext+1)%log_len] = "";
       if (cmd.substr(0,7) == "toward ")
       {
 	// Update current target position (tx,ty) at a "toward" command
@@ -449,7 +480,7 @@ class Game
 {
 private:
   // Image greenbot[45];
-  Image mazeimage;
+  Image mazeimage, bgimage;
 
   vector<IElem*> walls[(tileW+1)*(tileH+1)];
 
@@ -468,10 +499,16 @@ private:
     int x0, y0, x1, y1;
     string name0;
     string name1;
-    RenderMessage(Image* _frame, int _x0, int _y0, int _x1, int _y1, string nm0, string nm1)
+    vector<string> log0;
+    vector<string> log1;
+    RenderMessage(Image* _frame,
+		  int _x0, int _y0, int _x1, int _y1,
+		  string nm0, string nm1,
+		  vector<string> _log0, vector<string> _log1)
       : frame(_frame), screen(0),
 	x0(_x0), y0(_y0), x1(_x1), y1(_y1),
-	name0(nm0), name1(nm1)
+	name0(nm0), name1(nm1),
+	log0(_log0), log1(_log1)
     {}
     ~RenderMessage()
     {
@@ -496,8 +533,10 @@ private:
       if (self->to_renderer[0]->pop(msg))
       {
 	// This thread builds a 1080p image and scales down the large image
-	msg->screen = new Image(Geometry(1920, 1080), Color("white"));
-        Image big(*msg->frame);
+	//msg->screen = new Image(Geometry(1920, 1080), Color("#eeeeee"));
+        msg->screen = new Image(self->bgimage);
+	msg->screen->crop(Geometry(1920,1080,0,0));
+	Image big(*msg->frame);
   	big.zoom(Geometry(1080,1080));
 	msg->screen->composite(big, 0, 0, OverCompositeOp);
 
@@ -505,6 +544,8 @@ private:
         while (!self->to_renderer[1]->push(msg));
 	framecount++;
       }
+      else
+	this_thread::sleep_for(chrono::milliseconds(25));
     } 
   }
   
@@ -537,6 +578,8 @@ private:
 	while (!self->to_renderer[2]->push(msg));
 	framecount++;
       }
+      else
+	this_thread::sleep_for(chrono::milliseconds(25));
     } 
   }
 
@@ -558,10 +601,12 @@ private:
 	focus1.zoom(Geometry(dsz,dsz));
 	msg->screen->composite(focus1,1920-dsz-7,1080-dsz-7,OverCompositeOp);
 
-	// Remaining work goes to last stage:
+	// Remaining work goes to annotation stage:
 	while (!self->to_renderer[3]->push(msg));
 	framecount++;
       }
+      else
+	this_thread::sleep_for(chrono::milliseconds(25));
     } 
   }
 
@@ -571,52 +616,103 @@ private:
     int framecount = 0;
     while (framecount < framelimit)
     {
-      // Approximate Progress cout
-      if (!self->to_renderer[3]->empty())
-      {
-	const int p0 = 5*(int)((framecount / (0.0+framelimit))*20);
-	const int p1 = 5*(int)(((framecount+1) / (0.0+framelimit))*20);
-	if (p0 != p1)
-	  cout << "Rendering is now " << p1 << "% complete" << endl;
-      }
-      
       // Finish processing a RenderMessage
       RenderMessage* msg;
       if (self->to_renderer[3]->pop(msg))
       {
 	// Add text annotations
-	msg->screen->fontPointsize(50);
 	msg->screen->font("helvetica");
-        msg->screen->annotate(msg->name0,
+	msg->screen->strokeColor(Color("black"));
+	msg->screen->fillColor(Color("black"));
+
+	// Names
+	msg->screen->fontPointsize(50);
+	msg->screen->annotate(msg->name0,
 			      Geometry(1920-1080-15,50,1080+7,dsz+15),
 			      WestGravity);
-        msg->screen->annotate(msg->name1,
+	msg->screen->annotate(msg->name1,
 			      Geometry(1920-1080-375,50,1080+7,dsz+20+77),
 			      EastGravity);
-	
-	// Write it out to disk
-	string countstr = to_string(framecount);
-	while (countstr.size()<7) countstr = "0"+countstr;
-	msg->screen->write(string("out/frame")+countstr+string(".png"));
 
-	delete msg;
+	// Logs
+	msg->screen->fontPointsize(30);
+	for (int i = 0; i < msg->log0.size(); ++i)
+	  msg->screen->annotate(msg->log0[i],
+				Geometry(1920-1080-15*3-dsz,30,1080+dsz+15*2-5,15+i*30),
+				WestGravity);
+	
+	// Remaining work goes to last stage for PNG encoding
+	while (!self->to_renderer[4]->push(msg));
 	framecount++;
       }
+      else
+	this_thread::sleep_for(chrono::milliseconds(25));
     }
-    cout << "reached end of renderloop3" << endl;
+  }
+
+  // Stage 4: Write to file as compressed PNG
+  static void renderloop4(Game* self)
+  {
+    int framecount = 0;
+    while (framecount < framelimit)
+    {
+      if (!self->to_renderer[4]->empty())
+      {
+	// Approximate progress to std::cout
+        const int p0 = 5*(int)((framecount / (0.0+framelimit))*20);
+	const int p1 = 5*(int)(((framecount+1) / (0.0+framelimit))*20);
+	if (p0 != p1)
+	  cout << "Rendering is now " << p1 << "% complete" << endl;
+      
+	// Finish processing a RenderMessage
+	RenderMessage* msg;
+	if (self->to_renderer[4]->pop(msg))
+	{
+	  // Write it out to disk
+	  string countstr = to_string(framecount);
+	  while (countstr.size()<7) countstr = "0"+countstr;
+	  msg->screen->write(string("out/frame")+countstr+string(".png"));
+	  
+	  delete msg;
+	  framecount++;
+	}
+      }
+      else
+	this_thread::sleep_for(chrono::milliseconds(25));
+    }
+  }
+
+  static void renderMazeRow(int off, promise<Image*>& resp, Game* self)
+  {
+    auto& walls = self->walls;
+    Image* img = new Image(Geometry(renderW, renderH), Color("transparent"));
+    img->strokeWidth(7);
+    img->strokeColor(Color("black"));
+    img->strokeLineCap(RoundCap);
+    for (int y = off; y < tileH+1; y += 3)
+      for (int x = 0; x < tileW+1; ++x)
+	for (IElem* wall : Walls(x, y))
+	  wall->drawTo(*img);
+    resp.set_value(img);
   }
 
   void renderMaze()
   {
-    // Game draw options
-    mazeimage.strokeWidth(7);
-    mazeimage.strokeColor(Color("black"));
-    mazeimage.strokeLineCap(RoundCap);
-
-    // Draw Walls
-    for (int i = 0; i < (tileW+1)*(tileH+1); ++i)
-      for (IElem* wall : walls[i])
-	wall->drawTo(mazeimage);
+    // Drawing lots of small lines is apparently quite slow, so we
+    // parallelize this and then cache the mazeimage to reuse at every frame
+    promise<Image*> resp[3];
+    thread* threads[3];
+    threads[0] = new thread(renderMazeRow, 0, ref(resp[0]), this);
+    threads[1] = new thread(renderMazeRow, 1, ref(resp[1]), this);
+    threads[2] = new thread(renderMazeRow, 2, ref(resp[2]), this);
+    for (int t = 0; t < 3; ++t)
+    {
+      threads[t]->join();
+      Image* img = resp[t].get_future().get();
+      mazeimage.composite(*img, 0, 0, OverCompositeOp);
+      delete threads[t];
+      delete img;
+    }
   }
   
   void loadMaze(string mazepath)
@@ -684,7 +780,9 @@ private:
 			     gameX(11),
 			     gameY(11),
 			     players[0]->getName(),
-			     "Speed Run");
+			     "Speed Run",
+			     players[0]->getLog(),
+			     vector<string>());
     else
       rm = new RenderMessage(gameimage,
 			     gameX(players[0]->getX()),
@@ -692,24 +790,28 @@ private:
 			     gameX(players[1]->getX()),
 			     gameY(players[1]->getY()),
 			     players[0]->getName(),
-			     players[1]->getName());
+			     players[1]->getName(),
+			     players[0]->getLog(),
+			     players[1]->getLog());
     while (!to_renderer[0]->push(rm));
   }
   
 public:
   Game(string mazepath, string agentcmd)
     : mazeimage(Geometry(renderW, renderH), Color("white")),
+      bgimage(Geometry(1920,1080),Color("#e5e5e5")),//bgimage("img/bgtexture.png"),
       walls{}, players(), objects(),
       framecount(0), starttime(mytime()),
       to_renderer(),
       renderers()
   {
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 5; ++i)
       to_renderer.push_back(new boost::lockfree::spsc_queue<RenderMessage*>(32*1024));
     renderers.push_back(new thread(renderloop0, this));
     renderers.push_back(new thread(renderloop1, this));
     renderers.push_back(new thread(renderloop2, this));
     renderers.push_back(new thread(renderloop3, this));
+    renderers.push_back(new thread(renderloop4, this));
     
     if (verbose) cout << "Game Initialization" << endl;
     // Load maze data
@@ -806,7 +908,10 @@ public:
 	cout << "Simulation is now " << p1 << "% complete" << endl;
 
       // Wait for next frame
-      while (mytime() - frametime < frame_ms);
+      while (mytime() - frametime < frame_ms)
+	// If the wait is substantial, sleep for all but 75ms of it
+	if (mytime() - frametime < frame_ms - 125)
+	  this_thread::sleep_for(chrono::milliseconds(frame_ms-(mytime()-frametime)-75)); 
     }
   }
 };
@@ -829,8 +934,13 @@ int main(int argc, char **argv)
   {
     if (argc == 2)
     {
-      // Game 1
+      // Game 1, initialize maze, players (w/ subprocesses), etc
       Game game("mazepool/0.maze", argv[1]);
+
+      // Short pause to let subprocesses boot up
+      this_thread::sleep_for(chrono::milliseconds(250));
+
+      // Start simulating the game
       game.play1();
     }
     else
@@ -851,6 +961,9 @@ int main(int argc, char **argv)
   
   return 0;
 }
+
+
+
 
 
 

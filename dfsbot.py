@@ -23,11 +23,11 @@ plan = [(0,0)]
 seen = set(plan)
 dead = set()
 
-# Wait a few seconds for some initial sense data
-time.sleep(0.1)
-
 # introduce ourselves, all friendly like
-print("himynameis DFSbot", flush=True)
+print("himynameis DFS-bot", flush=True)
+
+# Wait a few seconds for some initial sense data
+time.sleep(0.25)
 
 while True:
   # while there is new input on stdin:
