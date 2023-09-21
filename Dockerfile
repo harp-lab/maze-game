@@ -2,14 +2,13 @@ FROM ubuntu:latest
 
 RUN apt-get update && apt-get install -y \
     git \
-    vim \
-    make \
-    graphicsmagick \
+    llvm \
     clang \
-    libboost-all-dev \
-    ghostscript \
-    python3 \
-    ffmpeg 
+    make \
+    ffmpeg \
+    graphicsmagick \
+    libgraphicsmagick++1-dev \
+    libboost-all-dev 
 
 
 WORKDIR /root
