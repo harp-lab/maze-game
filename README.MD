@@ -9,9 +9,6 @@ A server that lets us create a maze based on a [text file](./mazepool/0.maze) wi
    * Locally after installing all the dependecies
      * Install all the required dependencies, go to step 3.
    * In a docker container, using the Dockerfile in the repo, skip to step 4 after starting the container.
-     * Docker, (Choose your version):
-       * If you use a Macbook or Windows computer use `Dockerfile_notarch`, if you use Archlinux or a Linux computer you have the freedom to choose either or.
-       * If you chose `Dockerfile_notarch`, rename the file to `Dockerfile` then proceed, if arch name `Dockerfile_arch` to `Dockerfile` then proceed
      * `docker build -t maze-game .`
      * `docker run --name=maze-game --detach maze-game`
      * Then you can use vscode to [connect](https://code.visualstudio.com/docs/devcontainers/containers) to attach to the container, go to step 4.
