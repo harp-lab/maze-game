@@ -35,5 +35,3 @@ mazeContent = mazeToFile(maze, width, height)
 outputFilePath = f'mazepool/{hash(mazeContent)}.maze'
 with open(outputFilePath, 'w+') as f:
     f.write(mazeContent)
-
-outputFilePath
