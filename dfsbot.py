@@ -75,5 +75,5 @@ while True:
     print("toward %s %s" % (plan[-1][0]+0.5, plan[-1][1]+0.5), flush=True)
   
   print("", flush=True)
-  time.sleep(0.125)
+  time.sleep(0.1)
   
