@@ -31,7 +31,7 @@ using namespace boost::process;
 #define renderH 2550
 
 #define frame_ms 500
-#define frame_per_sec 18
+#define frame_per_sec 60
 #define gamelimit_sec 99
 #define framelimit (gamelimit_sec * frame_per_sec)
 
@@ -784,7 +784,7 @@ int main(int argc, char **argv) {
     try {
         if (argc == 2) {
             // Game 1
-            Game game("mazepool/0.maze", argv[1]);
+            Game game("mazepool/5.maze", argv[1]);
             game.play1();
         } else {
             cout << "Use: ./server path/to/player.py" << endl << endl;
