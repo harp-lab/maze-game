@@ -33,7 +33,7 @@ using namespace boost::process;
 
 #define frame_ms 600
 #define frame_per_sec 18
-#define gamelimit_sec 90
+#define gamelimit_sec 75
 #define framelimit (gamelimit_sec*frame_per_sec)
 
 #define gameX(x) (15+x*((renderW-30.0)/tileW))
@@ -41,9 +41,9 @@ using namespace boost::process;
 
 #define Walls(x,y) (walls[((int)y)*(tileW+1)+(int)x])
 
-#define robot_r 0.3
-#define robot_maxv 1.8 / frame_per_sec
-#define robot_accel (robot_maxv/2.5)
+#define robot_r 0.26
+#define robot_maxv 0.8 / frame_per_sec
+#define robot_accel (robot_maxv/4.5)
 
 #define log_len 16
 #define log_char_len 24
@@ -138,39 +138,16 @@ public:
     myerror("Bad notify.");
   }
 
-  void closestPoint(double ox, double oy, double& clx, double& cly)
+  void closestPoint(const double ox, const double oy, double& clx, double& cly)
   {
-    double b0=0.0;
-    const double px0 = data[0];
-    const double py0 = data[1];
-    double d0 = (px0-ox)*(px0-ox)+(py0-oy)*(py0-oy);
-    double b1=1.0;
-    const double px1 = data[2];
-    const double py1 = data[3];
-    double d1 = (px1-ox)*(px1-ox)+(py1-oy)*(py1-oy);
-    
-    while (b1 > b0)
-    {
-      const double mid = b0+(b1-b0)/2;   
-      const double px = data[0] + mid*(data[2]-data[0]);
-      const double py = data[1] + mid*(data[3]-data[1]);
-      const double d = (px-ox)*(px-ox)+(py-oy)*(py-oy);
-      if (d0 < d1)
-      {
-	b1 = mid;
-	d1 = d;
-      }
-      else
-      {
-	b0 = mid;
-	d0 = d;
-      }
-    }
-    
-    clx = data[0] + b0*(data[2]-data[0]);
-    cly = data[1] + b0*(data[3]-data[1]);
+    const double ax = data[0], ay = data[1], bx = data[2], by = data[3];
+    double t = ((ox - ax) * (bx - ax) + (oy - ay) * (by - ay)) /
+               ((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+    t = min(max(t,0.0),1.0);
+    clx = ax + t * (bx - ax);
+    cly = ay + t * (by - ay);
   }
-
+  
   bool withinRange(double ox, double oy, double r)
   {
     double cx,cy;
@@ -218,28 +195,22 @@ public:
       y -= v*sin(a);
       //v = 0;  // If we want to use a "stop" instead of "bounce" mechanic
       
-      // Bounce mechanic
+      // Bounce mechanic: speed up!
       double cx, cy;
       line->closestPoint(x,y,cx,cy);
-      
       if (y-cy == 0 && x-cx == 0)
 	myerror("Bad collision.");
       else
       {
-	// I think I may have seen this get the bot stuck against a wall
-	// but don't believe this should be possible as we maintain the invariant
-	// of being in open-space by undoing a move that leads to a collision
-	// before altering the a and v for a "bounce". Could use further testing.
 	a = atan2(y-cy,x-cx);
-	//cout << "Bounce angle: " << a << "; dx: " << cos(a) << "; dy: " << sin(a) << endl;
-	v *= 1.1;
+	v *= 1.35;
       }
     }
   } 
   
   virtual void notify(Circle* circle)
   {
-    myerror("Circle-circle collision.");
+    myerror("Bad circle-circle collision?");
   }  
 
   double getA() { return a; }
@@ -259,6 +230,63 @@ public:
     x += v*cos(a);
     y += v*sin(a);
   }
+};
+
+
+class Flag : public Circle
+{
+private:
+  int framecount;
+  bool isgreen;
+  Image flagimage[2];
+  
+public:
+  Flag(bool _isgreen = false, double _x = 10.5, double _y = 10.5)
+    : Circle(_x,_y,0.42,0.0),
+      framecount(_isgreen?0:10),
+      isgreen(_isgreen),
+      flagimage{}
+  {
+    flagimage[0] = Image(_isgreen?"img/greenflag0.png":"img/redflag0.png");
+    flagimage[1] = Image(_isgreen?"img/greenflag1.png":"img/redflag1.png");
+  }
+  ~Flag(){}
+
+  void drawTo(Image& canvas)
+  {
+    Image img(flagimage[((framecount+frame_per_sec)%(frame_per_sec+(isgreen?3:5)))<4?1:0]);
+    if (framecount < 0)
+    {
+      if (framecount > -11)
+      {
+	const double p = abs(framecount--)/11.0;
+	const double f = 1.0+p*2.5;
+	img.zoom(Geometry((int)(128*f),(int)(128*f)));
+	canvas.composite(img, gameX(getX())-(int)(64*f), gameY(getY())-(int)(64*f), OverCompositeOp);
+      }
+    }
+    else
+    {
+      canvas.composite(img, gameX(getX())-64, gameY(getY())-64, OverCompositeOp);
+      ++framecount;
+    }
+  }
+
+  virtual void notify(Circle* circ)
+  {
+    myerror("flag::notify(Circle*)");
+  }
+
+  void captured()
+  {
+    // start fade-out animation
+    framecount = -1;
+  }
+
+  string writeStatus()
+  {
+    return string(isgreen?"greenflag":"redflag")+" "+to_string(getX())+" "+to_string(getY());
+  } 
 };
 
 
@@ -399,15 +427,23 @@ public:
 
     // Process a single command per timestep
     // (except for non-behavioral commands, which do not count)
-    string cmd;
+    string cmd, displaycmd;
     while (commands.pop(cmd))
     {
+      if (cmd.substr(0,8) == "comment ")
+	displaycmd = cmd.substr(8, cmd.size()-8);
+      else
+	displaycmd = cmd;
       if (verbose)
-	cout << cmd << endl;
-      log[lognext] = cmd.substr(0, min(log_char_len, (int)cmd.size()));
+	cout << displaycmd << endl;
+
+      // Add to the player's log, for printing to the next frame
+      log[lognext] = displaycmd.substr(0, min(log_char_len, (int)displaycmd.size()));
       lognext = (lognext+1) % log_len;
       log[lognext] = "";
       log[(lognext+1)%log_len] = "";
+
+      // Process command
       if (cmd.substr(0,7) == "toward ")
       {
 	// Update current target position (tx,ty) at a "toward" command
@@ -436,43 +472,21 @@ public:
     }
   }
 
+  void notify(Circle* circ)
+  {
+    Flag* flag = dynamic_cast<Flag*>(circ);
+    if (flag)
+    {
+      flag->captured();
+    }
+  }
+
   string getName() { return name; }
 
   string writeStatus()
   {
     return string("bot ")+to_string(getX())+" "+to_string(getY()); 
   }
-};
-
-
-class Flag : public Circle
-{
-private:
-  int framecount;
-  bool isgreen;
-  Image flagimage[2];
-  
-public:
-  Flag(bool _isgreen = false, double _x = 10.5, double _y = 10.5)
-    : Circle(_x,_y,0.32,0.0),
-      framecount(_isgreen?0:10),
-      isgreen(_isgreen),
-      flagimage{}
-  {
-    flagimage[0] = Image(_isgreen?"img/greenflag0.png":"img/redflag0.png");
-    flagimage[1] = Image(_isgreen?"img/greenflag1.png":"img/redflag1.png");
-  }
-  ~Flag(){}
-
-  void drawTo(Image& canvas)
-  {
-    canvas.composite(flagimage[(++framecount%(frame_per_sec+(isgreen?3:5)))<4?1:0], gameX(getX())-64, gameY(getY())-64, OverCompositeOp);
-  }
-
-  string writeStatus()
-  {
-    return string(isgreen?"greenflag":"redflag")+" "+to_string(getX())+" "+to_string(getY());
-  } 
 };
 
 
@@ -631,14 +645,14 @@ private:
 			      Geometry(1920-1080-15,50,1080+7,dsz+15),
 			      WestGravity);
 	msg->screen->annotate(msg->name1,
-			      Geometry(1920-1080-375,50,1080+7,dsz+20+77),
-			      EastGravity);
+			      Geometry(1920-1080-100,50,1080+7,dsz+15+55),
+			      WestGravity);
 
 	// Logs
 	msg->screen->fontPointsize(30);
 	for (int i = 0; i < msg->log0.size(); ++i)
 	  msg->screen->annotate(msg->log0[i],
-				Geometry(1920-1080-15*3-dsz,30,1080+dsz+15*2-5,15+i*30),
+				Geometry(1920-1080-15*3-dsz,30,1080+dsz+15*2-10,5+i*30),
 				WestGravity);
 	
 	// Remaining work goes to last stage for PNG encoding
@@ -780,7 +794,7 @@ private:
 			     gameX(11),
 			     gameY(11),
 			     players[0]->getName(),
-			     "Speed Run",
+			     "1-Player Capture The Flag",
 			     players[0]->getLog(),
 			     vector<string>());
     else
@@ -890,6 +904,7 @@ public:
 	pc.insert(pc.end(), Walls(px1,py1).begin(), Walls(px1,py1).end());
 	pc.insert(pc.end(), Walls(px1+1,py1).begin(), Walls(px1+1,py1).end());
 	pc.insert(pc.end(), Walls(px1,py1+1).begin(), Walls(px1,py1+1).end());
+	pc.insert(pc.end(), objects.begin(), objects.end());
 	for (IElem* el : pc)
 	  el->visit(bot);
       }
@@ -951,7 +966,7 @@ int main(int argc, char **argv)
     // Can render the frames as an mp4 once ~Game() returns:
     system((string("ffmpeg -framerate ")+to_string(frame_per_sec)+string(" -pattern_type glob -i 'out/frame*.png' -c:v libx264 -pix_fmt yuv420p out.mp4")).c_str());
     system("tar -czvf out.mp4.tar.gz out.mp4");
-    cout << "Rendered output saved to out.mp4" << endl;
+    cout << "Rendered output saved to out.mp4 and out.mp4.tar.gz" << endl;
   }
   catch ( Exception &error_ )
   {
