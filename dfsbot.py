@@ -19,7 +19,7 @@ for i in range(0,11):
   walls |= {(i,0,i+0,0), (i,11,i+1,11), (0,i,0,i+1), (11,i,11,i+1)}
 
 # DFS tree
-plan = [(0,0)]
+plan = []
 seen = set(plan)
 dead = set()
 
@@ -40,12 +40,13 @@ while True:
       # update our own position
       x = float(obs[1])
       y = float(obs[2])
-      #print("comment now at: %s %s" % (x,y), flush=True)
+      # print("comment now at: %s %s" % (x,y), flush=True)
       # update our latest tile reached once we are firmly on the inside of the tile
       if ((int(x) != tx or int(y) != ty) and
           ((x-(int(x)+0.5))**2 + (y-(int(y)+0.5))**2)**0.5 < 0.2):
         tx = int(x)
         ty = int(y)
+        if plan == []: plan = [(tx,ty)]
         #print("comment now at tile: %s %s" % (tx,ty), flush=True)
     elif obs[0] == "wall":
       #print("comment wall: %s %s %s %s" % (obs[1],obs[2],obs[3],obs[4]), flush=True)
@@ -57,7 +58,7 @@ while True:
       walls |= {(x0,y0,x1,y1)}
 
   # if we've achieved our goal, update our plan and issue a new command
-  if plan[-1] == (tx,ty):
+  if len(plan) > 0 and plan[-1] == (tx,ty):
     seen |= {(tx,ty)}
     # assumes sufficient sense data, but that may not strictly be true  
     if (tx,ty+1) not in dead|seen and (tx,ty+1,tx+1,ty+1) not in walls:
