@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     graphicsmagick \
     libgraphicsmagick++1-dev \
-    libboost-all-dev 
+    libboost-all-dev \
+    openjdk-17-jdk 
 
 
 WORKDIR /root
