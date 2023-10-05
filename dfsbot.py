@@ -20,7 +20,7 @@ for i in range(0,11):
 
 # DFS tree
 plan = []
-seen = set(plan)
+seen = set()
 dead = set()
 
 # introduce ourselves, all friendly like
@@ -46,7 +46,9 @@ while True:
           ((x-(int(x)+0.5))**2 + (y-(int(y)+0.5))**2)**0.5 < 0.2):
         tx = int(x)
         ty = int(y)
-        if plan == []: plan = [(tx,ty)]
+        if plan == []:
+          plan = [(tx,ty)]
+          seen = set(plan)
         #print("comment now at tile: %s %s" % (tx,ty), flush=True)
     elif obs[0] == "wall":
       #print("comment wall: %s %s %s %s" % (obs[1],obs[2],obs[3],obs[4]), flush=True)
@@ -59,20 +61,42 @@ while True:
 
   # if we've achieved our goal, update our plan and issue a new command
   if len(plan) > 0 and plan[-1] == (tx,ty):
-    seen |= {(tx,ty)}
+    # seen == set() means we have not started or are backtracking to the start
+    # if len(plan)==1, we're ready to restart again
+    if seen > set() or len(plan) == 1:
+      seen |= {(tx,ty)}
+
+    # if we've hit our opposing corner:
+    if abs(plan[-1][0]-plan[0][0]) == abs(plan[-1][1]-plan[0][1]) == 10:
+      # mark all other tiles dead, this is our path, backtrack
+      planset = set(plan)
+      for i in range(11):
+        for j in range(11):
+          if (i,j) not in planset:
+            dead |= {(i,j)}
+      # reset seen so we backtrack path to origin
+      seen = set()
+
+    # if pathing, search through lower, right, top, left children, in that order
     # assumes sufficient sense data, but that may not strictly be true  
-    if (tx,ty+1) not in dead|seen and (tx,ty+1,tx+1,ty+1) not in walls:
+    if len(seen) > 0 and (tx,ty+1) not in dead|seen and (tx,ty+1,tx+1,ty+1) not in walls:
       plan.append((tx,ty+1))  # move down
-    elif (tx+1,ty) not in dead|seen and (tx+1,ty,tx+1,ty+1) not in walls:
+    elif len(seen) > 0 and (tx+1,ty) not in dead|seen and (tx+1,ty,tx+1,ty+1) not in walls:
       plan.append((tx+1,ty))  # move right
-    elif (tx,ty-1) not in dead|seen and (tx,ty,tx+1,ty) not in walls:
+    elif len(seen) > 0 and (tx,ty-1) not in dead|seen and (tx,ty,tx+1,ty) not in walls:
       plan.append((tx,ty-1))  # move up
-    elif (tx-1,ty) not in dead|seen and (tx,ty,tx,ty+1) not in walls:
+    elif len(seen) > 0 and (tx-1,ty) not in dead|seen and (tx,ty,tx,ty+1) not in walls:
       plan.append((tx-1,ty))  # move left
-    else: # cannot advance, backtrack
+    else:
+    # if we cannot advance or are not pathing currently, backtrack
       dead |= {(tx,ty)}
       plan = plan[:-1]
-    # issue a command for the new plan
+      # backtrack further, in one command, if we're
+      #   returning to start AND its in a straight line:
+      #while seen == set() and (plan[-1][0] == tx or plan[-1][1] == ty):
+      #  plan = plan[:-1]
+      
+    # issue a command for the latest plan
     print("toward %s %s" % (plan[-1][0]+0.5, plan[-1][1]+0.5), flush=True)
   
   print("", flush=True)
