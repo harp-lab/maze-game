@@ -7,6 +7,7 @@
 
 
 #include <Magick++.h>
+#include <set>
 #include <vector>
 #include <array>
 #include <cmath>
@@ -33,7 +34,7 @@ using namespace boost::process;
 
 #define frame_ms 600
 #define frame_per_sec 18
-#define gamelimit_sec 75
+#define gamelimit_sec 100
 #define framelimit (gamelimit_sec*frame_per_sec)
 
 #define gameX(x) (15+x*((renderW-30.0)/tileW))
@@ -42,8 +43,8 @@ using namespace boost::process;
 #define Walls(x,y) (walls[((int)y)*(tileW+1)+(int)x])
 
 #define robot_r 0.26
-#define robot_maxv 0.8 / frame_per_sec
-#define robot_accel (robot_maxv/4.5)
+#define robot_maxv 2.75 / frame_per_sec
+#define robot_accel (robot_maxv/5.5)
 
 #define log_len 16
 #define log_char_len 24
@@ -77,11 +78,12 @@ class IElem
 public:
   virtual ~IElem() {}
   virtual void drawTo(Image&) = 0;
-  virtual bool withinRange(double x, double y, double r) = 0;
+  virtual void closestPoint(double, double, double&, double&) const = 0;
+  virtual bool withinRange(double, double, double) const = 0;
   virtual void visit(IElem*) = 0;
   virtual void notify(Line*) = 0;
   virtual void notify(Circle*) = 0;
-  virtual string writeStatus() = 0;
+  virtual string writeStatus() const = 0;
 };
 
 
@@ -108,7 +110,7 @@ public:
       data[i] = ln.data[i];
   }
 
-  bool operator ==(const Line& ln)
+  bool operator ==(const Line& ln) const
   {
     return data[0] == ln.data[0]
              && data[1] == ln.data[1]
@@ -138,7 +140,7 @@ public:
     myerror("Bad notify.");
   }
 
-  void closestPoint(const double ox, const double oy, double& clx, double& cly)
+  void closestPoint(const double ox, const double oy, double& clx, double& cly) const
   {
     const double ax = data[0], ay = data[1], bx = data[2], by = data[3];
     double t = ((ox - ax) * (bx - ax) + (oy - ay) * (by - ay)) /
@@ -148,14 +150,14 @@ public:
     cly = ay + t * (by - ay);
   }
   
-  bool withinRange(double ox, double oy, double r)
+  bool withinRange(double ox, double oy, double r) const
   {
     double cx,cy;
     closestPoint(ox,oy,cx,cy);
     return sqrt((cx-ox)*(cx-ox)+(cy-oy)*(cy-oy)) <= r;
   }
 
-  string writeStatus()
+  string writeStatus() const
   {
     return string("wall ")+to_string(data[0])
              +" "+to_string(data[1])
@@ -174,8 +176,14 @@ public:
   Circle(double _x, double _y, double _r, double _maxv)
     : x(_x), y(_y), v(0), a(0), maxv(_maxv), r(_r) { }
   ~Circle() { }
+
+  void closestPoint(const double ox, const double oy, double& clx, double& cly) const
+  {
+    clx = x + r*cos(atan2(oy-y,ox-x));
+    cly = y + r*sin(atan2(oy-y,ox-x));
+  }
   
-  virtual bool withinRange(double ox, double oy, double r1)
+  bool withinRange(double ox, double oy, double r1) const
   {
     return (x-ox)*(x-ox)+(y-oy)*(y-oy) <= r*r + r1*r1;
   }
@@ -213,11 +221,11 @@ public:
     myerror("Bad circle-circle collision?");
   }  
 
-  double getA() { return a; }
-  double getV() { return v; }
-  double getX() { return x; }
-  double getY() { return y; }
-  double getR() { return r; }
+  double getA() const { return a; } 
+  double getV() const { return v; } 
+  double getX() const { return x; } 
+  double getY() const { return y; } 
+  double getR() const { return r; } 
 
   void setV(double _v) { v = _v; }
   void setA(double _a) { a = _a; } 
@@ -257,10 +265,10 @@ public:
     Image img(flagimage[((framecount+frame_per_sec)%(frame_per_sec+(isgreen?3:5)))<4?1:0]);
     if (framecount < 0)
     {
-      if (framecount > -11)
+      if (framecount > -14)
       {
-	const double p = abs(framecount--)/11.0;
-	const double f = 1.0+p*2.5;
+	const double p = abs(framecount--)/14.0;
+	const double f = 1.0+p*6.5;
 	img.zoom(Geometry((int)(128*f),(int)(128*f)));
 	canvas.composite(img, gameX(getX())-(int)(64*f), gameY(getY())-(int)(64*f), OverCompositeOp);
       }
@@ -280,10 +288,10 @@ public:
   void captured()
   {
     // start fade-out animation
-    framecount = -1;
+    if (framecount >= 0) framecount = -1;
   }
 
-  string writeStatus()
+  string writeStatus() const
   {
     return string(isgreen?"greenflag":"redflag")+" "+to_string(getX())+" "+to_string(getY());
   } 
@@ -358,7 +366,7 @@ public:
     messenger.join();
   }
 
-  vector<string> getLog() { return log; }
+  vector<string> getLog() const { return log; } 
 
   void drawTo(Image& canvas)
   {
@@ -409,7 +417,7 @@ public:
       // Slow down faster and stop
       if (getV() > robot_maxv/32) setV(getV()/4.0);
       else setV(0);
-    else if (d < 0.3 && getV() > robot_maxv/16)
+    else if (d < 0.2 && getV() > robot_maxv/16)
       // If quite close, slow down on approach
       setV(max(getV()-0.35*robot_maxv, robot_maxv/16));
 
@@ -481,9 +489,9 @@ public:
     }
   }
 
-  string getName() { return name; }
+  string getName() const { return name; } 
 
-  string writeStatus()
+  string writeStatus() const
   {
     return string("bot ")+to_string(getX())+" "+to_string(getY()); 
   }
@@ -645,7 +653,7 @@ private:
 			      Geometry(1920-1080-15,50,1080+7,dsz+15),
 			      WestGravity);
 	msg->screen->annotate(msg->name1,
-			      Geometry(1920-1080-100,50,1080+7,dsz+15+55),
+			      Geometry(1920-1080-100,50,1080+7,dsz+15+49),
 			      WestGravity);
 
 	// Logs
@@ -700,8 +708,8 @@ private:
   {
     auto& walls = self->walls;
     Image* img = new Image(Geometry(renderW, renderH), Color("transparent"));
-    img->strokeWidth(7);
-    img->strokeColor(Color("black"));
+    img->strokeWidth(5);
+    img->strokeColor(Color("#909090"));
     img->strokeLineCap(RoundCap);
     for (int y = off; y < tileH+1; y += 3)
       for (int x = 0; x < tileW+1; ++x)
@@ -773,18 +781,18 @@ private:
     }
   }
 
-  void renderFrame()
+  void renderFrame(set<IElem*>& visible)
   {
-    // Start with cached maze background
+    // Start current frame with cached maze background
     Image* gameimage = new Image(mazeimage);
-
-    // Render game objects and players
-    for (IElem* obj : objects)
-      obj->drawTo(*gameimage);
-
-    for (Robot* bot : players)
-      bot->drawTo(*gameimage);
-
+    gameimage->strokeWidth(11);
+    gameimage->strokeColor(Color("#000000"));
+    gameimage->strokeLineCap(RoundCap);
+    
+    // Render all visible elements
+    for (IElem* el : visible)
+      el->drawTo(*gameimage);
+    
     // Push out to the renderer thread
     RenderMessage* rm;
     if (players.size()==1)
@@ -857,25 +865,36 @@ public:
     cout << "reached end of ~Game" << endl;
   }
 
-  string writeViewFrom(double x, double y)
+  string writeRenderViewFrom(const double x, const double y, set<IElem*>& visible)
   {
     string out = "";
-    // Walls in current tile
-    for (IElem* el : Walls(x,y))
-      if (el->withinRange(((int)x)+0.5,((int)y)+0.5,.85))
-	out += el->writeStatus() + "\n";
-    // Walls in tile below
-    for (IElem* el : Walls(x,y+1))
-      if (el->withinRange((int)x+0.5,(int)y+0.5,0.85))
-	out += el->writeStatus() + "\n";
-    // Walls in tile to right
-    for (IElem* el : Walls(x+1,y))
-      if (el->withinRange((int)x+0.5,(int)y+0.5,0.85))
-	out += el->writeStatus() + "\n";
-    // Bots nearby
-    for (Robot* bot : players)
-      if (bot->withinRange(x,y, 2.5))
-	out += string("bot ") + to_string(bot->getX()) + " " + to_string(bot->getY());
+
+    // Generate upper-bound on view in distance-ordered set
+    auto dist = [x,y](const IElem* const el0, const IElem* const el1)
+    {
+      // is el0 closer to x,y than el1
+      double cx0,cy0,cx1,cy1;
+      el0->closestPoint(x,y,cx0,cy0);
+      el1->closestPoint(x,y,cx1,cy1);
+      return (x-cx0)*(x-cx0)+(y-cy0)*(y-cy0) < (x-cx1)*(x-cx1)+(y-cy1)*(y-cy1);
+    };
+    set<IElem*, function<bool(const IElem* const fst, const IElem* const snd)>> nearby(dist);
+    for (IElem* pl : players)
+      nearby.insert(pl);
+    for (IElem* obj : objects)
+      nearby.insert(obj);
+    for (int i = max((int)x-2,0); i <= min((int)x+2,tileW+1); ++i)
+      for (int j = max((int)y-2,0); j <= min((int)y+2,tileH+1); ++j)
+	for (IElem* w : Walls(i,j))
+	  nearby.insert(w);
+
+    // Filter and print+render the view
+    for (IElem* el : nearby)
+    {
+      out += el->writeStatus() + "\n";
+      visible.insert(el);
+    }
+    
     return out;
   }
   
@@ -886,6 +905,8 @@ public:
     while (framecount < framelimit)
     {
       frametime = mytime();
+      
+      set<IElem*> visible;
 
       // Simulate all players
       for (Robot* bot : players)
@@ -894,7 +915,7 @@ public:
 	double py = bot->getY();
 
 	// Send bot its view and process its actions
-	bot->play(writeViewFrom(px, py));
+	bot->play(writeRenderViewFrom(px, py, visible));
 
 	double px1 = bot->getX();
 	double py1 = bot->getY();
@@ -909,8 +930,8 @@ public:
 	  el->visit(bot);
       }
 
-      // Render this frame
-      renderFrame();
+      // Send this frame to the render pipeline
+      renderFrame(visible);
 
       // Increment to next frame/timestep
       framecount++;
