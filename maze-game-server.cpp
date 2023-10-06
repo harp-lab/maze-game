@@ -363,6 +363,7 @@ public:
     childin << "close" << endl;
     childin.close();
     childout.close();
+    proc.terminate();
     messenger.join();
   }
 
@@ -856,11 +857,19 @@ public:
       renderers[i]->join();
     
     for (int i = 0; i < renderers.size(); ++i)
+    {
       delete to_renderer[i];
+      delete renderers[i];
+    }
     
     for (int i = 0; i < (tileW+1)*(tileH+1); ++i)
       for (IElem* el : walls[i])
-	delete el;
+	      delete el;
+
+    for (Robot* player : players)
+    {
+      delete player;
+    }
 
     cout << "reached end of ~Game" << endl;
   }
