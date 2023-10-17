@@ -8,6 +8,7 @@ import random
 # current exact position
 x = 0.5
 y = 0.5
+home_x,home_y = 0,0
 
 # last tile "reached" (i.e., being close enough to center)
 ty = -1
@@ -48,6 +49,8 @@ while True:
         ty = int(y)
         if plan == []:
           plan = [(tx,ty)]
+          home_x = tx
+          home_y = ty
           seen = set(plan)
         #print("comment now at tile: %s %s" % (tx,ty), flush=True)
     elif obs[0] == "wall":
@@ -61,20 +64,21 @@ while True:
 
   # if we've achieved our goal, update our plan and issue a new command
   if len(plan) > 0 and plan[-1] == (tx,ty):
-    # seen == set() means we have not started or are backtracking to the start
-    # if len(plan)==1, we're ready to restart again
-    if seen > set() or len(plan) == 1:
-      seen |= {(tx,ty)}
+    seen |= {(tx,ty)} # marking the tile as seen
+    # returned back to origin
+    if(plan[-1][0] == home_x) and (plan[-1][1] == home_y):
+      dead -= {(10,10)}
+      seen = {(tx,ty)}
 
     # if we've hit our opposing corner:
-    if abs(plan[-1][0]-plan[0][0]) == abs(plan[-1][1]-plan[0][1]) == 10:
-      # mark all other tiles dead, this is our path, backtrack
+    if(plan[-1][0] == 10) and (plan[-1][1] == 10):
+      # mark all other tiles dead, this is our final path, backtrack
       planset = set(plan)
+      dead = set()
       for i in range(11):
         for j in range(11):
           if (i,j) not in planset:
-            dead |= {(i,j)}
-      # reset seen so we backtrack path to origin
+            dead |= {(i,j)} # also means, there is only one way to move
       seen = set()
 
     # if pathing, search through lower, right, top, left children, in that order
