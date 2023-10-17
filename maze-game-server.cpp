@@ -33,7 +33,7 @@ using namespace boost::process;
 
 #define frame_ms 600
 #define frame_per_sec 18
-#define gamelimit_sec 100
+#define gamelimit_sec 240
 #define framelimit (gamelimit_sec * frame_per_sec)
 
 #define gameX(x) (15 + x * ((renderW - 30.0) / tileW))
@@ -413,7 +413,7 @@ public:
   Robot(string cmd, double _x, double _y)
       : Circle(_x, _y, robot_r, robot_maxv),
         greenbot{}, botframe(0), name(),
-        tx(_x), ty(_y), homex(8.5), homey(9.5),
+        tx(_x), ty(_y), homex(_x), homey(_y),
         log(), lognext(0), isFlagCaptured(false), flagcount(0),
         childout(),
         childin(),
@@ -943,11 +943,11 @@ public:
     if (verbose)
       cout << "Maze Rendered" << endl;
 
-    Robot *bot = new Robot(agentcmd, 9.5, 10.5);
+    Robot *bot = new Robot(agentcmd, 0.5, 0.5);
     players.push_back(bot);
     if (verbose)
       cout << "Player Initialized" << endl;
-    objects.push_back(new Home(8.5, 9.5));
+    objects.push_back(new Home(0.5, 0.5));
     objects.push_back(new Flag());
   }
 
