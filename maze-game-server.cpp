@@ -366,10 +366,75 @@ public:
   }
 };
 
+
+class Coin : public Circle
+{
+  private:
+  int framecount;
+  bool isgreen;
+  Image coinimage[8];
+
+  public:
+  Coin(bool _isgreen = false, double _x = 10.5, double _y = 10.5)
+      : Circle(_x, _y, 0.42, 0.0),
+        framecount(0),
+        coinimage{}
+  {
+    flagimage[0] = Image(_isgreen ? "img/greenflag0.png" : "img/redflag0.png");
+    flagimage[1] = Image(_isgreen ? "img/greenflag1.png" : "img/redflag1.png");
+  }
+  ~Flag() {}
+
+  void drawTo(Image &canvas)
+  {
+    Image img(flagimage[((framecount + frame_per_sec) % (frame_per_sec + (isgreen ? 3 : 5))) < 4 ? 1 : 0]);
+    if (framecount < 0)
+    {
+      if (framecount > -14)
+      {
+        const double p = abs(framecount--) / 14.0;
+        const double f = 1.0 + p * 6.5;
+        img.zoom(Geometry((int)(128 * f), (int)(128 * f)));
+        canvas.composite(img, gameX(getX()) - (int)(64 * f), gameY(getY()) - (int)(64 * f), OverCompositeOp);
+      }
+    }
+    else
+    {
+      canvas.composite(img, gameX(getX()) - 64, gameY(getY()) - 64, OverCompositeOp);
+      ++framecount;
+    }
+  }
+
+  virtual void notify(Circle *circ)
+  {
+    myerror("flag::notify(Circle*)");
+  }
+
+  void captured()
+  {
+    // start fade-out animation
+    if (framecount >= 0)
+      framecount = -1;
+  }
+
+  void returnBack()
+  {
+    // puts the flag back.
+    if (framecount < 0)
+      framecount = 0;
+  }
+
+  string writeStatus() const
+  {
+    return string(isgreen ? "greenflag" : "redflag") + " " + to_string(getX()) + " " + to_string(getY());
+  }
+};
+
 class Robot : public Circle
 {
 private:
   Image greenbot[45];
+  bool isgreen;
   int botframe;
   string name;
   double tx, ty;
@@ -410,9 +475,9 @@ private:
   }
 
 public:
-  Robot(string cmd, double _x, double _y)
+  Robot(string cmd, double _x, double _y, bool isgreen = true)
       : Circle(_x, _y, robot_r, robot_maxv),
-        greenbot{}, botframe(0), name(),
+        greenbot{}, botframe(0), name(),isgreen(isgreen),
         tx(_x), ty(_y), homex(_x), homey(_y),
         log(), lognext(0), isFlagCaptured(false), flagcount(0),
         childout(),
@@ -422,7 +487,7 @@ public:
         observations(32 * 1024),
         messenger(readloop, this)
   {
-    Image fullgreenbot("img/greenbot2.png");
+    Image fullgreenbot = Image(isgreen ? "img/greenbot.png" : "img/redbot.png");
     for (int i = 0; i < 45; ++i)
     {
       greenbot[i] = fullgreenbot;
@@ -522,8 +587,10 @@ public:
         displaycmd = cmd.substr(8, cmd.size() - 8);
       else
         displaycmd = cmd;
-      if (verbose)
-        cout << displaycmd << endl;
+      if (verbose && isgreen)
+        cout << "green " << displaycmd << endl;
+      if (verbose && !(isgreen))
+        cout << "red " << displaycmd << endl;
 
       // Add to the player's log, for printing to the next frame
       log[lognext] = displaycmd.substr(0, min(log_char_len, (int)displaycmd.size()));
@@ -582,7 +649,7 @@ public:
 
   string writeStatus() const
   {
-    return string("bot ") + to_string(getX()) + " " + to_string(getY());
+    return string("opponent ") + to_string(getX()) + " " + to_string(getY());
   }
 };
 
@@ -943,12 +1010,53 @@ public:
     if (verbose)
       cout << "Maze Rendered" << endl;
 
-    Robot *bot = new Robot(agentcmd, 0.5, 0.5);
+    Robot *bot = new Robot(agentcmd, 10.5, 10.5, false);
     players.push_back(bot);
     if (verbose)
       cout << "Player Initialized" << endl;
+    objects.push_back(new Home(10.5, 10.5));
+    objects.push_back(new Flag(false, 0.5, 0.5));
+  }
+
+  Game(string mazepath, string agent1cmd, string agent2cmd)
+      : mazeimage(Geometry(renderW, renderH), Color("white")),
+        bgimage(Geometry(1920, 1080), Color("#e5e5e5")), // bgimage("img/bgtexture.png"),
+        walls{}, players(), objects(),
+        framecount(0), starttime(mytime()),
+        to_renderer(),
+        renderers()
+  {
+    for (int i = 0; i < 5; ++i)
+      to_renderer.push_back(new boost::lockfree::spsc_queue<RenderMessage *>(32 * 1024));
+    renderers.push_back(new thread(renderloop0, this));
+    renderers.push_back(new thread(renderloop1, this));
+    renderers.push_back(new thread(renderloop2, this));
+    renderers.push_back(new thread(renderloop3, this));
+    renderers.push_back(new thread(renderloop4, this));
+
+    if (verbose)
+      cout << "Game Initialization" << endl;
+    // Load maze data
+    loadMaze(mazepath);
+    if (verbose)
+      cout << "Maze Loaded" << endl;
+    // Pre-render maze walls
+    renderMaze();
+    if (verbose)
+      cout << "Maze Rendered" << endl;
+
+    objects.push_back(new Flag(true,0.5,0.5));
+    objects.push_back(new Flag(false,10.5,10.5));
+    Robot *bot1 = new Robot(agent1cmd, 0.5, 0.5, true);
+    players.push_back(bot1);
     objects.push_back(new Home(0.5, 0.5));
-    objects.push_back(new Flag());
+    if (verbose)
+      cout << "Player 1 Initialized" << endl;
+    Robot *bot2 = new Robot(agent2cmd, 10.5, 10.5, false);
+    players.push_back(bot2);
+    objects.push_back(new Home(10.5, 10.5));
+    if (verbose)
+      cout << "Player 2 Initialized" << endl;
   }
 
   ~Game()
@@ -974,22 +1082,29 @@ public:
     cout << "reached end of ~Game" << endl;
   }
 
-  string writeRenderViewFrom(const double x, const double y, set<IElem *> &visible)
+  string writeRenderViewFrom(Robot* bot, set<IElem *> &visible)
   {
+    // std::cout << "The current x: "<< x <<"y : " << y << std::endl;
+    // std::cout << "The robot x : " << players.at(0)->getX() << "y : " << players.at(0)->getY() << std::endl;
     string out = "";
-
-    for (IElem *pl : players)
-      visible.insert(pl);
+    double x = bot->getX();
+    double y = bot->getY();
+    set<IElem*> nearby;
+    for (Robot *pl : players)
+      if(pl!=bot)
+        nearby.insert(pl);
     for (IElem *obj : objects)
-      visible.insert(obj);
+      nearby.insert(obj);
     for (int i = max((int)x - 2, 0); i <= min((int)x + 2, tileW); ++i)
       for (int j = max((int)y - 2, 0); j <= min((int)y + 2, tileH); ++j)
         for (Line *w : Walls(i, j))
-          visible.insert(w);
+          nearby.insert(w);
 
-    for (IElem *el : visible)
+    out += "bot " + to_string(x) + " " + to_string(y) + "\n";
+    for (IElem *el : nearby)
     {
       out += el->writeStatus() + "\n";
+      visible.insert(el);
     }
     return out;
   }
@@ -1012,7 +1127,63 @@ public:
         double py = bot->getY();
 
         // Send bot its view and process its actions
-        bot->play(writeRenderViewFrom(px, py, visible));
+        // bot->play(writeRenderViewFrom(px, py, visible));
+        bot->play(writeRenderViewFrom(bot, visible));
+
+        double px1 = bot->getX();
+        double py1 = bot->getY();
+
+        // Process all collisions for bot
+        vector<IElem *> pc; // possible collisions
+        pc.insert(pc.end(), Walls(px1, py1).begin(), Walls(px1, py1).end());
+        pc.insert(pc.end(), Walls(px1 + 1, py1).begin(), Walls(px1 + 1, py1).end());
+        pc.insert(pc.end(), Walls(px1, py1 + 1).begin(), Walls(px1, py1 + 1).end());
+        pc.insert(pc.end(), objects.begin(), objects.end());
+        for (IElem *el : pc)
+          el->visit(bot);
+      }
+
+      // Send this frame to the render pipeline
+      renderFrame(visible);
+
+      // Increment to next frame/timestep
+      framecount++;
+      // cout << "Completed Frame " << (framecount-1) << endl;
+
+      // Approximate Progress cout
+      const int p0 = 5 * (int)(((framecount - 1) / (0.0 + framelimit)) * 20);
+      const int p1 = 5 * (int)((framecount / (0.0 + framelimit)) * 20);
+      if (p0 != p1 && verbose)
+        cout << "Simulation is now " << p1 << "% complete" << endl;
+
+      // Wait for next frame
+      while (mytime() - frametime < frame_ms)
+        // If the wait is substantial, sleep for all but 75ms of it
+        if (mytime() - frametime < frame_ms - 125)
+          this_thread::sleep_for(chrono::milliseconds(frame_ms - (mytime() - frametime) - 75));
+    }
+  }
+
+  void play2()
+  {
+    if (verbose)
+      cout << "Beginning a 2-player game." << endl;
+
+    while (framecount < framelimit)
+    {
+      frametime = mytime();
+
+      set<IElem *> visible;
+
+      // Simulate all players
+      // order of players, meaning one player's moves will be processed before the other
+      for (Robot *bot : players)
+      {
+        // double px = bot->getX();
+        // double py = bot->getY();
+
+        // Send bot its view and process its actions
+        bot->play(writeRenderViewFrom(bot, visible));
 
         double px1 = bot->getX();
         double py1 = bot->getY();
@@ -1075,6 +1246,17 @@ int main(int argc, char **argv)
 
       // Start simulating the game
       game.play1();
+    }
+    else if(argc == 3) // Two player game
+    {
+      // Game 2, intialize maze, players (w/ subprocesses), etc
+      Game game("mazepool/0.maze", argv[1], argv[2]);
+
+      // this_thread::sleep_for(chrono::milliseconds(250));
+
+      // // Start simulating the game
+      game.play2();
+      std::cout << "Beautiful exit" << std::endl;
     }
     else
     {
