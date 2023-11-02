@@ -20,6 +20,7 @@
 #include <future>
 #include <boost/process.hpp>
 #include <boost/lockfree/spsc_queue.hpp>
+#include <random>
 
 using namespace std;
 using namespace Magick;
@@ -33,7 +34,7 @@ using namespace boost::process;
 
 #define frame_ms 600
 #define frame_per_sec 18
-#define gamelimit_sec 240
+#define gamelimit_sec 10 
 #define framelimit (gamelimit_sec * frame_per_sec)
 
 #define gameX(x) (15 + x * ((renderW - 30.0) / tileW))
@@ -58,6 +59,13 @@ unsigned long long mytime()
   return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 }
 
+std::random_device _rd;
+std::mt19937 _mt(_rd()); 
+std::uniform_int_distribution<int> _dist(0,10);
+double randomPos(){
+    return _dist(_mt)+0.5;
+}
+
 void myerror(string msg)
 {
   cout << msg << endl;
@@ -72,6 +80,8 @@ void myassert(bool cond, string msg = "Assertion failed")
 
 class Line;
 class Circle;
+class Game;
+
 class IElem
 {
 public:
@@ -191,6 +201,35 @@ public:
   }
 };
 
+class TWall : public Line
+{
+private:
+  bool visible;
+  int framecount;
+
+  public:
+  TWall(double x0, double y0, double x1, double y1)
+      : Line(x0, y0, x1, y1), visible(true)
+  {
+  }
+  ~TWall() {}
+  bool isvisible() const { return visible; }
+
+  void drawTo(Image &canvas)
+  {
+    if (visible == true)
+    {
+      framecount++;
+      // canvas.strokeWidth(11);
+      // canvas.strokeColor(Color("#000000"));
+      // canvas.strokeLineCap(RoundCap);
+      Line::drawTo(canvas);
+      if(framecount > 270)
+        visible=false;
+    }
+  }
+};
+
 class Circle : public IElem
 {
 private:
@@ -265,6 +304,8 @@ public:
 
   void setV(double _v) { v = _v; }
   void setA(double _a) { a = _a; }
+  void setX(double _x) { x = _x; }
+  void setY(double _y) { y = _y; }
 
   virtual void move()
   {
@@ -371,35 +412,36 @@ class Coin : public Circle
 {
   private:
   int framecount;
-  bool isgreen;
   Image coinimage[8];
+  bool visible;
 
   public:
-  Coin(bool _isgreen = false, double _x = 10.5, double _y = 10.5)
+  Coin(double _x = 10.5, double _y = 10.5)
       : Circle(_x, _y, 0.42, 0.0),
-        framecount(0),
+        framecount(0),visible(true),
         coinimage{}
   {
-    flagimage[0] = Image(_isgreen ? "img/greenflag0.png" : "img/redflag0.png");
-    flagimage[1] = Image(_isgreen ? "img/greenflag1.png" : "img/redflag1.png");
+    Image fullcoinimage = Image("img/coin.png");
+    for (int i = 0; i < 8; ++i)
+    {
+      coinimage[i] = fullcoinimage;
+      coinimage[i].crop(Geometry(152, 150, i * 152, 0));
+    }
   }
-  ~Flag() {}
+  ~Coin() {}
+
+  bool isvisible() const { return visible; }
 
   void drawTo(Image &canvas)
   {
-    Image img(flagimage[((framecount + frame_per_sec) % (frame_per_sec + (isgreen ? 3 : 5))) < 4 ? 1 : 0]);
     if (framecount < 0)
     {
-      if (framecount > -14)
-      {
-        const double p = abs(framecount--) / 14.0;
-        const double f = 1.0 + p * 6.5;
-        img.zoom(Geometry((int)(128 * f), (int)(128 * f)));
-        canvas.composite(img, gameX(getX()) - (int)(64 * f), gameY(getY()) - (int)(64 * f), OverCompositeOp);
-      }
+      ++framecount;
     }
     else
     {
+      Image img(coinimage[((framecount/3) % 8)]);
+      visible = true;
       canvas.composite(img, gameX(getX()) - 64, gameY(getY()) - 64, OverCompositeOp);
       ++framecount;
     }
@@ -413,20 +455,18 @@ class Coin : public Circle
   void captured()
   {
     // start fade-out animation
-    if (framecount >= 0)
-      framecount = -1;
-  }
-
-  void returnBack()
-  {
-    // puts the flag back.
-    if (framecount < 0)
-      framecount = 0;
+    if (visible == true)
+    {
+      visible = false;
+      setX(randomPos());
+      setY(randomPos());
+      framecount = -90;
+    }
   }
 
   string writeStatus() const
   {
-    return string(isgreen ? "greenflag" : "redflag") + " " + to_string(getX()) + " " + to_string(getY());
+    return "coin " + to_string(getX()) + " " + to_string(getY());
   }
 };
 
@@ -442,8 +482,10 @@ private:
   vector<string> log;
   int lognext;
   int flagcount;
+  int coincount;
   bool isFlagCaptured;
   Flag *flagCaptured;
+  Game *game;
 
   // Subprocess-related members
   ipstream childout;
@@ -475,11 +517,11 @@ private:
   }
 
 public:
-  Robot(string cmd, double _x, double _y, bool isgreen = true)
+  Robot(string cmd, double _x, double _y, Game *_game, bool isgreen = true)
       : Circle(_x, _y, robot_r, robot_maxv),
         greenbot{}, botframe(0), name(),isgreen(isgreen),
-        tx(_x), ty(_y), homex(_x), homey(_y),
-        log(), lognext(0), isFlagCaptured(false), flagcount(0),
+        tx(_x), ty(_y), homex(_x), homey(_y),game(_game),
+        log(), lognext(0), isFlagCaptured(false), flagcount(0),coincount(0),
         childout(),
         childin(),
         proc(cmd.c_str(), std_out > childout, std_in < childin),
@@ -508,6 +550,7 @@ public:
   double getHomeX() { return homex; };
   double getHomeY() { return homey; };
   int getflagCount() { return flagcount; };
+  int getcoinCount() { return coincount; };
 
   vector<string> getLog() const { return log; }
 
@@ -607,6 +650,17 @@ public:
         tx = stod(data.substr(0, pos));
         ty = stod(data.substr(pos + 1, data.size() - 1 - pos));
       }
+      else if (cmd.substr(0,6) == "block ")
+      {
+        string data = cmd.substr(6, cmd.size() - 6);
+        std::vector<std::string> result;
+        boost::split(result, data, boost::is_any_of(" "));
+        double x0 = stod(result[0]);
+        double y0 = stod(result[1]);
+        double x1 = stod(result[2]);
+        double y1 = stod(result[3]);
+        game->addTWall(x0,y0,x1,y1);
+      }
       else
       {
         // Non-behavioral commands
@@ -631,6 +685,7 @@ public:
   {
     Flag *flag = dynamic_cast<Flag *>(flag_or_home);
     Home *home = dynamic_cast<Home *>(flag_or_home);
+    Coin *coin = dynamic_cast<Coin *>(flag_or_home);
     if (flag && !(flag->getX() == homex && flag->getY() == homey) && isFlagCaptured == false)
     {
       isFlagCaptured = true;
@@ -642,6 +697,12 @@ public:
     {
       flagCaptured->returnBack();
       isFlagCaptured = false;
+    }
+    else if (coin && coin->isvisible())
+    {
+      // std::cout << "Inside the robot notify for a coin" << std::endl;
+      coincount++;
+      coin->captured();
     }
   }
 
@@ -974,12 +1035,28 @@ private:
                              gameY(players[0]->getY()),
                              gameX(players[1]->getX()),
                              gameY(players[1]->getY()),
-                             players[0]->getName(),
-                             players[1]->getName(),
+                             players[0]->getName() + " " + std::to_string(players[0]->getflagCount()) + " Flags " + std::to_string(players[0]->getcoinCount()) + " Coins",
+                             players[1]->getName() + " " + std::to_string(players[1]->getflagCount()) + " Flags " + std::to_string(players[1]->getcoinCount()) + " Coins",
                              players[0]->getLog(),
                              players[1]->getLog());
     while (!to_renderer[0]->push(rm))
       ;
+  }
+
+  void addCoins(vector<IElem*> &objects)
+  {
+    for (int i = 0; i < 20; i++)
+    {
+      double x = randomPos();
+      double y = randomPos();
+      objects.push_back(new Coin(x, y));
+    }
+  }
+
+  void addTWall(double x0, double y0, double x1, double y1)
+  {
+    TWall *twall = new TWall(x0, y0, x1, y1);
+    objects.push_back(twall);
   }
 
 public:
@@ -1010,12 +1087,12 @@ public:
     if (verbose)
       cout << "Maze Rendered" << endl;
 
-    Robot *bot = new Robot(agentcmd, 10.5, 10.5, false);
+    Robot *bot = new Robot(agentcmd, 10.5, 10.5, this, false);
     players.push_back(bot);
     if (verbose)
       cout << "Player Initialized" << endl;
     objects.push_back(new Home(10.5, 10.5));
-    objects.push_back(new Flag(false, 0.5, 0.5));
+    objects.push_back(new Flag(true, 0.5, 0.5));
   }
 
   Game(string mazepath, string agent1cmd, string agent2cmd)
@@ -1045,14 +1122,15 @@ public:
     if (verbose)
       cout << "Maze Rendered" << endl;
 
+    addCoins(objects);
     objects.push_back(new Flag(true,0.5,0.5));
     objects.push_back(new Flag(false,10.5,10.5));
-    Robot *bot1 = new Robot(agent1cmd, 0.5, 0.5, true);
+    Robot *bot1 = new Robot(agent1cmd, 0.5, 0.5,this, true);
     players.push_back(bot1);
     objects.push_back(new Home(0.5, 0.5));
     if (verbose)
       cout << "Player 1 Initialized" << endl;
-    Robot *bot2 = new Robot(agent2cmd, 10.5, 10.5, false);
+    Robot *bot2 = new Robot(agent2cmd, 10.5, 10.5, this, false);
     players.push_back(bot2);
     objects.push_back(new Home(10.5, 10.5));
     if (verbose)
@@ -1073,11 +1151,12 @@ public:
     for (int i = 0; i < (tileW + 1) * (tileH + 1); ++i)
       for (IElem *el : walls[i])
         delete el;
-
+    
+    for (IElem *elem : objects)
+      delete elem;
+  
     for (Robot *player : players)
-    {
       delete player;
-    }
 
     cout << "reached end of ~Game" << endl;
   }
@@ -1101,6 +1180,7 @@ public:
           nearby.insert(w);
 
     out += "bot " + to_string(x) + " " + to_string(y) + "\n";
+    visible.insert(bot);
     for (IElem *el : nearby)
     {
       out += el->writeStatus() + "\n";
