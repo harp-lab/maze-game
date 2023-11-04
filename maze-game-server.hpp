@@ -49,6 +49,9 @@ using namespace boost::process;
 #define log_len 16
 #define log_char_len 24
 
+constexpr int TWALL_COST = 0; //coins
+constexpr int TWALL_DURATION = 5; //seconds
+
 #define verbose true
 
 unsigned long long mytime()
@@ -82,6 +85,7 @@ void myassert(bool cond, string msg = "Assertion failed")
 class Line;
 class Circle;
 class Game;
+class Robot;
 
 class IElem
 {
@@ -153,6 +157,8 @@ public:
   bool isvisible() const;
 
   void drawTo(Image &canvas);
+
+  string writeStatus() const;
 };
 
 class Circle : public IElem
@@ -307,6 +313,7 @@ public:
   double getHomeY();
   int getflagCount();
   int getcoinCount();
+  void setcoinCount(int _coinCount);
 
   vector<string> getLog() const;
 
@@ -400,7 +407,7 @@ public:
 
   string writeRenderViewFrom(Robot *bot, set<IElem *> &visible);
 
-  void addTWall(double x0, double y0, double x1, double y1);
+  void addTWall(double x0, double y0, string dirn);
 
   void removeTWall(TWall *twall);
 

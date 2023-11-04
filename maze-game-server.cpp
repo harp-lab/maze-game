@@ -115,16 +115,22 @@ void TWall::drawTo(Image &canvas)
 {
   if (visible == true)
   {
-    int m = ((double)framecount/101) * 5;
+    int m = ((double)framecount / 101) * 5;
     std::cout << "The frame count is: " << framecount << "m is " << m << std::endl;
+    canvas.strokeWidth(15);
     canvas.strokeColor(Color(color[m]));
     Line::drawTo(canvas);
+    canvas.strokeWidth(11);
     canvas.strokeColor(Color("#000000"));
     framecount++;
     if (framecount > 100)
       Game::getGame()->removeTWall(this);
-      
   }
+}
+
+string TWall::writeStatus() const
+{
+  return string("twall ") + to_string(getX0()) + " " + to_string(getY0()) + " " + to_string(getX1()) + " " + to_string(getY1()) + " " + to_string(framecount);
 }
 
 Circle::Circle(double _x, double _y, double _r, double _maxv)
@@ -338,27 +344,27 @@ string Coin::writeStatus() const
   return "coin " + to_string(getX()) + " " + to_string(getY());
 }
 
-SnowBall::SnowBall(double _x, double _y, Robot* _bot)
-          : Circle(_x, _y, 0.42, 0.0),bot(_bot),
-            framecount(0), visible(true),
-            snowballimage(Image('img/snowball.png')){}
+// SnowBall::SnowBall(double _x, double _y, Robot* _bot)
+//           : Circle(_x, _y, 0.42, 0.0),bot(_bot),
+//             framecount(0), visible(true),
+//             snowballimage(Image('img/snowball.png')){}
 
-bool SnowBall::isvisible() const { return visible; }
+// bool SnowBall::isvisible() const { return visible; }
 
-void SnowBall::drawTo(Image &canvas)
-{
-  if(visible)
-  {
-    framecount++;
-    Image img(snowballimage);
-    canvas.composite(img, gameX(getX()) - 64, gameY(getY()) - 64, OverCompositeOp);
-    if(framecount > 54)
-    {
-      visible = false;
-      framecount = 0;
-    }
-  }
-}
+// void SnowBall::drawTo(Image &canvas)
+// {
+//   if(visible)
+//   {
+//     framecount++;
+//     Image img(snowballimage);
+//     canvas.composite(img, gameX(getX()) - 64, gameY(getY()) - 64, OverCompositeOp);
+//     if(framecount > 54)
+//     {
+//       visible = false;
+//       framecount = 0;
+//     }
+//   }
+// }
 
 // Run in each ctor as dedicated thread for communication
 void Robot::readloop(Robot *self)
@@ -415,6 +421,7 @@ double Robot::getHomeX() { return homex; };
 double Robot::getHomeY() { return homey; };
 int Robot::getflagCount() { return flagcount; };
 int Robot::getcoinCount() { return coincount; };
+void Robot::setcoinCount(int _coinCount) { coincount = _coinCount; };
 
 vector<string> Robot::getLog() const { return log; }
 
@@ -519,11 +526,15 @@ void Robot::play(string view)
       string data = cmd.substr(6, cmd.size() - 6);
       std::vector<std::string> result;
       boost::split(result, data, boost::is_any_of(" "));
-      double x0 = stod(result[0]);
-      double y0 = stod(result[1]);
-      double x1 = stod(result[2]);
-      double y1 = stod(result[3]);
-      game->addTWall(x0, y0, x1, y1);
+      double x = stod(result[0]);
+      double y = stod(result[1]);
+      string wall_dir = result[2];
+      double dist = sqrt((x - getX()) * (x - getX()) + (y - getY()) * (y - getY()));
+      if (coincount >= TWALL_COST && dist <= 2.0)
+      {
+        game->addTWall(x, y, wall_dir);
+        coincount -= TWALL_COST;
+      }
     }
     else
     {
@@ -577,7 +588,7 @@ string Robot::writeStatus() const
   return string("opponent ") + to_string(getX()) + " " + to_string(getY());
 }
 
-Game* Game::game_singleton = nullptr;
+Game *Game::game_singleton = nullptr;
 Game::RenderMessage::RenderMessage(Image *_frame,
                                    int _x0, int _y0, int _x1, int _y1,
                                    string nm0, string nm1,
@@ -700,13 +711,52 @@ void Game::renderloop3(Game *self)
       msg->screen->strokeColor(Color("black"));
       msg->screen->fillColor(Color("black"));
 
+      vector<string> bot0_scores;
+      vector<string> bot1_scores;
+      boost::split(bot0_scores, msg->name0, boost::is_any_of(" "));
+      boost::split(bot1_scores, msg->name1, boost::is_any_of(" "));
       // Names
-      msg->screen->fontPointsize(50);
-      msg->screen->annotate(msg->name0,
+      msg->screen->fontPointsize(40);
+      msg->screen->annotate(bot0_scores.at(0),
                             Geometry(1920 - 1080 - 15, 50, 1080 + 7, dsz + 15),
                             WestGravity);
-      msg->screen->annotate(msg->name1,
-                            Geometry(1920 - 1080 - 100, 50, 1080 + 7, dsz + 15 + 49),
+      msg->screen->annotate(bot1_scores.at(0),
+                            Geometry(1920 - 1080 - 15, 50, 1080 + 7, dsz + 15 + 49),
+                            WestGravity);
+      // 1080 + 7 + 10* (bot0_scores.at(0).length())
+      int flag_end0 = 1080 + 21 * (bot0_scores.at(0).length()) + 10;
+      int flag_end1 = 1080 + 21 * (bot1_scores.at(0).length()) + 10;
+      Image greenflag("img/greenflag0.png");
+      greenflag.resize(Geometry(50, 50));
+      msg->screen->composite(greenflag, flag_end0, dsz + 15, OverCompositeOp);
+      Image redflag("img/redflag0.png");
+      redflag.resize(Geometry(50, 50));
+      msg->screen->composite(redflag, flag_end1, dsz + 15 + 49, OverCompositeOp);
+
+      // Flags
+      msg->screen->fontPointsize(40);
+      msg->screen->annotate(bot0_scores.at(1),
+                            Geometry(1920 - 1080 - 15, 50, flag_end0 + 55, dsz + 15),
+                            WestGravity);
+      msg->screen->annotate(bot1_scores.at(1),
+                            Geometry(1920 - 1080 - 15, 50, flag_end1 + 55, dsz + 15 + 49),
+                            WestGravity);
+
+      int coin_end0 = flag_end0 + 55 + 21 * (bot0_scores.at(1).length());
+      int coin_end1 = flag_end1 + 55 + 21 * (bot1_scores.at(1).length());
+      Image coin("img/coin.png");
+      coin.crop(Geometry(152, 150, 0, 0));
+      coin.resize(Geometry(60, 60));
+      msg->screen->composite(coin, coin_end0, dsz + 15, OverCompositeOp);
+      msg->screen->composite(coin, coin_end1, dsz + 15 + 49, OverCompositeOp);
+
+      // Coins
+      msg->screen->fontPointsize(40);
+      msg->screen->annotate(bot0_scores.at(2),
+                            Geometry(1920 - 1080 - 15, 50, coin_end0 + 55, dsz + 15),
+                            WestGravity);
+      msg->screen->annotate(bot1_scores.at(2),
+                            Geometry(1920 - 1080 - 15, 50, coin_end1 + 55, dsz + 15 + 49),
                             WestGravity);
 
       // Logs
@@ -714,6 +764,10 @@ void Game::renderloop3(Game *self)
       for (int i = 0; i < msg->log0.size(); ++i)
         msg->screen->annotate(msg->log0[i],
                               Geometry(1920 - 1080 - 15 * 3 - dsz, 30, 1080 + dsz + 15 * 2 - 10, 5 + i * 30),
+                              WestGravity);
+      for (int i = 0; i < msg->log1.size(); ++i)
+        msg->screen->annotate(msg->log1[i],
+                              Geometry(1920 - 1080 - 15, 30, 1080 + 7, dsz + 15 + 120 + i * 30),
                               WestGravity);
 
       // Remaining work goes to last stage for PNG encoding
@@ -866,8 +920,8 @@ void Game::renderFrame(set<IElem *> &visible)
                            gameY(players[0]->getY()),
                            gameX(players[1]->getX()),
                            gameY(players[1]->getY()),
-                           players[0]->getName() + " " + std::to_string(players[0]->getflagCount()) + " Flags " + std::to_string(players[0]->getcoinCount()) + " Coins",
-                           players[1]->getName() + " " + std::to_string(players[1]->getflagCount()) + " Flags " + std::to_string(players[1]->getcoinCount()) + " Coins",
+                           players[0]->getName() + " " + std::to_string(players[0]->getflagCount()) + " " + std::to_string(players[0]->getcoinCount()),
+                           players[1]->getName() + " " + std::to_string(players[1]->getflagCount()) + " " + std::to_string(players[1]->getcoinCount()),
                            players[0]->getLog(),
                            players[1]->getLog());
   while (!to_renderer[0]->push(rm))
@@ -884,21 +938,53 @@ void Game::addCoins(vector<IElem *> &objects)
   }
 }
 
-void Game::addTWall(double x0, double y0, double x1, double y1)
+void Game::addTWall(double _x, double _y, string dirn)
 {
+  double x0, y0, x1, y1;
+  if (dirn == "l") // left
+  {
+    x0 = _x;
+    y0 = _y;
+    x1 = _x;
+    y1 = _y + 1;
+  }
+  else if (dirn == "r") // right
+  {
+    x0 = _x + 1;
+    y0 = _y;
+    x1 = _x + 1;
+    y1 = _y + 1;
+  }
+  else if (dirn == "u") // up
+  {
+    x0 = _x;
+    y0 = _y;
+    x1 = _x + 1;
+    y1 = _y;
+  }
+  else if (dirn == "d") // down
+  {
+    x0 = _x;
+    y0 = _y + 1;
+    x1 = _x + 1;
+    y1 = _y + 1;
+  }
+  else
+    myerror("Invalid direction for twall");
   TWall *twall = new TWall(x0, y0, x1, y1);
   objects.push_back(twall);
 }
 
-void Game::removeTWall(TWall* twall)
+void Game::removeTWall(TWall *twall)
 {
-    auto it = find(objects.begin(), objects.end(),
-                   twall);
- 
-    if (it != objects.end()) {
-        objects.erase(it);
-    }
-    delete twall;
+  auto it = find(objects.begin(), objects.end(),
+                 twall);
+
+  if (it != objects.end())
+  {
+    objects.erase(it);
+  }
+  delete twall;
 }
 
 Game::Game(string mazepath, string agentcmd)
@@ -928,7 +1014,8 @@ Game::Game(string mazepath, string agentcmd)
   renderMaze();
   if (verbose)
     cout << "Maze Rendered" << endl;
-
+  
+  addCoins(objects);
   Robot *bot = new Robot(agentcmd, 10.5, 10.5, this, false);
   players.push_back(bot);
   if (verbose)
@@ -980,9 +1067,9 @@ Game::Game(string mazepath, string agent1cmd, string agent2cmd)
     cout << "Player 2 Initialized" << endl;
 }
 
-Game* Game::getGame()
+Game *Game::getGame()
 {
-  if(game_singleton!=nullptr)
+  if (game_singleton != nullptr)
     return game_singleton;
   else
     myerror("Game not initialized");
@@ -1015,28 +1102,35 @@ Game::~Game()
 
 string Game::writeRenderViewFrom(Robot *bot, set<IElem *> &visible)
 {
-  // std::cout << "The current x: "<< x <<"y : " << y << std::endl;
-  // std::cout << "The robot x : " << players.at(0)->getX() << "y : " << players.at(0)->getY() << std::endl;
   string out = "";
   double x = bot->getX();
   double y = bot->getY();
   set<IElem *> nearby;
   for (Robot *pl : players)
+  {
     if (pl != bot)
       nearby.insert(pl);
+    visible.insert(pl);
+  }
+
   for (IElem *obj : objects)
-    nearby.insert(obj);
+  {
+    if (obj->withinRange(x, y, 2))
+      nearby.insert(obj);
+    visible.insert(obj);
+  }
   for (int i = max((int)x - 2, 0); i <= min((int)x + 2, tileW); ++i)
     for (int j = max((int)y - 2, 0); j <= min((int)y + 2, tileH); ++j)
       for (Line *w : Walls(i, j))
+      {
         nearby.insert(w);
+        visible.insert(w);
+      }
 
-  out += "bot " + to_string(x) + " " + to_string(y) + "\n";
-  visible.insert(bot);
+  out += "bot " + to_string(x) + " " + to_string(y) + " " + to_string(bot->getcoinCount()) + "\n";
   for (IElem *el : nearby)
   {
     out += el->writeStatus() + "\n";
-    visible.insert(el);
   }
   return out;
 }
@@ -1150,7 +1244,6 @@ void Game::play2()
         this_thread::sleep_for(chrono::milliseconds(frame_ms - (mytime() - frametime) - 75));
   }
 }
-
 
 // main
 int main(int argc, char **argv)
