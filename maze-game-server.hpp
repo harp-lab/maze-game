@@ -132,6 +132,8 @@ public:
 
   void closestPoint(const double ox, const double oy, double &clx, double &cly) const;
 
+  void midPoint(double &mx, double &my) const;
+
   bool withinRange(double ox, double oy, double r) const;
 
   // gives the angle with the point that is hit first, and reach end of the line
@@ -141,6 +143,9 @@ public:
   // gives the angle with the point that is hit second, and at the end of the line
   // when we walking in the clockwise direction
   virtual double maxAngleTo(double x, double y) const;
+
+  virtual double midAngleTo(double x, double y) const;
+
   string writeStatus() const;
 };
 
@@ -330,6 +335,17 @@ public:
   string writeStatus() const;
 };
 
+class LineAngle
+{
+  public:
+    const Line *const line;
+    const double minAngle;
+    const double maxAngle;
+    LineAngle(const Line *_line, double minAngle, double maxAngle);
+    ~LineAngle();
+    string writeStatus() const;
+};
+
 class Game
 {
 private:
@@ -395,6 +411,14 @@ private:
   void renderFrame(set<IElem *> &visible);
 
   void addCoins(vector<IElem *> &objects);
+
+  double elem_dist(double x, double y,const Line *el);
+
+  double elem_rad_dist(double x, double y, const Line *el0, const Line *el1);
+
+  void createLineAngle(double x, double y, const Line* line, set<LineAngle*, function<bool(const LineAngle *fst, const LineAngle *snd)>> &lineAngles);
+
+  void splitLineAngle(const LineAngle* la0, const LineAngle* la1, set<const LineAngle*> &lineAngles);
 
 public:
   Game(string mazepath, string agentcmd);

@@ -66,6 +66,12 @@ void Line::closestPoint(const double ox, const double oy, double &clx, double &c
   cly = ay + t * (by - ay);
 }
 
+void Line::midPoint(double &mx, double &my) const
+{
+  mx = (data[0] + data[2]) / 2;
+  my = (data[1] + data[3]) / 2;
+}
+
 bool Line::withinRange(double ox, double oy, double r) const
 {
   double cx, cy;
@@ -97,6 +103,13 @@ double Line::maxAngleTo(double x, double y) const
   if ((M_PI / 2 <= max_angle && max_angle <= M_PI) && (-M_PI <= min_angle && min_angle <= -M_PI / 2))
     return min_angle;
   return max(radians1, radians2);
+}
+
+double Line::midAngleTo(double x, double y) const
+{
+  double mx, my;
+  midPoint(mx, my);
+  return atan2(y - my, mx - x);
 }
 
 string Line::writeStatus() const
@@ -588,6 +601,16 @@ string Robot::writeStatus() const
   return string("opponent ") + to_string(getX()) + " " + to_string(getY());
 }
 
+LineAngle::LineAngle(const Line* _line, double minAngle, double maxAngle)
+  : line(_line), minAngle(minAngle), maxAngle(maxAngle) {}
+
+LineAngle::~LineAngle() {}
+
+string LineAngle::writeStatus() const
+{
+  return "lineangle " + line->writeStatus() + " " + to_string(minAngle) + " " + to_string(maxAngle);
+}
+
 Game *Game::game_singleton = nullptr;
 Game::RenderMessage::RenderMessage(Image *_frame,
                                    int _x0, int _y0, int _x1, int _y1,
@@ -1014,14 +1037,14 @@ Game::Game(string mazepath, string agentcmd)
   renderMaze();
   if (verbose)
     cout << "Maze Rendered" << endl;
-  
+
   addCoins(objects);
-  Robot *bot = new Robot(agentcmd, 10.5, 10.5, this, false);
+  Robot *bot = new Robot(agentcmd, 0.5, 0.5, this, false);
   players.push_back(bot);
   if (verbose)
     cout << "Player Initialized" << endl;
-  objects.push_back(new Home(10.5, 10.5));
-  objects.push_back(new Flag(true, 0.5, 0.5));
+  objects.push_back(new Home(0.5, 0.5));
+  objects.push_back(new Flag(true, 10.5, 10.5));
 }
 
 Game::Game(string mazepath, string agent1cmd, string agent2cmd)
@@ -1100,12 +1123,76 @@ Game::~Game()
   cout << "reached end of ~Game" << endl;
 }
 
+double Game::elem_dist(double x, double y,const Line* el)
+{
+  double cx, cy;
+  el->midPoint(cx, cy);
+  return sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+}
+// orders the lines by distance to the midpoint of the line
+// if the distances are the same, order by angle to the midpoint
+double Game::elem_rad_dist(double x, double y, const Line* el0, const Line* el1)
+{
+  double el0_dist = elem_dist(x, y, el0);
+  double el1_dist = elem_dist(x, y, el1);
+  if (el0_dist == el1_dist)
+  {
+    double el0_min = el0->midAngleTo(x, y);
+    double el1_min = el1->midAngleTo(x, y);
+    return el0_min < el1_min;
+  }
+  else
+    return el0_dist < el1_dist;
+}
+
+void Game::createLineAngle(double x, double y, const Line* line, set<LineAngle*, function<bool(const LineAngle *fst, const LineAngle *snd)>> &lineAngles)
+{
+  double minAngle = line->minAngleTo(x, y);
+  double maxAngle = line->maxAngleTo(x, y);
+  std::cout << "Inside the createLineAngle, min Angle: " << minAngle << " maxAngle: " << maxAngle << std::endl;
+  if(minAngle > maxAngle)
+  {
+    lineAngles.insert(new LineAngle(line, minAngle, M_PI));
+    lineAngles.insert(new LineAngle(line, -M_PI, maxAngle));
+  }
+  else if(minAngle < maxAngle)
+    lineAngles.insert(new LineAngle(line, minAngle, maxAngle));
+  return;
+}
+
+void Game::splitLineAngle(const LineAngle* la0, const LineAngle* la1, set<const LineAngle*> &lineAngles)
+{
+  double a = la0->minAngle, b = la0->maxAngle, c = la1->minAngle, d = la1->maxAngle;
+  if(b-c>0 and d-a>0) // means there is overlap, and it is not a point
+  {
+    double oa_min = max(a,c);
+    double oa_max = min(b,d);
+    if(oa_max < d)
+      lineAngles.insert(new LineAngle(la1->line, oa_max, d));
+    if(oa_min > c)
+      lineAngles.insert(new LineAngle(la1->line, c, oa_min));
+    lineAngles.erase(la1);
+  }
+  return;
+}
+
 string Game::writeRenderViewFrom(Robot *bot, set<IElem *> &visible)
 {
   string out = "";
   double x = bot->getX();
   double y = bot->getY();
-  set<IElem *> nearby;
+
+  auto rad_dist = [x, y, this](const Line *el0, const Line *el1)
+  {
+    return elem_rad_dist(x, y, el0, el1);
+  };
+  auto line_angle_dist = [x, y, this](const LineAngle *la0, const LineAngle *la1)
+  {
+    return elem_rad_dist(x, y, la0->line, la0->line);
+  };
+
+  set<const Line *, function<bool(const Line *fst, const Line *snd)>> nearby_walls(rad_dist);
+  set<IElem*> nearby;
   for (Robot *pl : players)
   {
     if (pl != bot)
@@ -1119,13 +1206,26 @@ string Game::writeRenderViewFrom(Robot *bot, set<IElem *> &visible)
       nearby.insert(obj);
     visible.insert(obj);
   }
-  for (int i = max((int)x - 2, 0); i <= min((int)x + 2, tileW); ++i)
-    for (int j = max((int)y - 2, 0); j <= min((int)y + 2, tileH); ++j)
+  int w_range = 2;
+  for (int i = max((int)x - w_range, 0); i <= min((int)x + w_range, tileW); ++i)
+    for (int j = max((int)y - w_range, 0); j <= min((int)y + w_range, tileH); ++j)
       for (Line *w : Walls(i, j))
       {
+        nearby_walls.insert(w);
         nearby.insert(w);
         visible.insert(w);
       }
+  set<LineAngle *, function<bool(const LineAngle *fst, const LineAngle *snd)>> lineAngles(line_angle_dist);
+  for (const Line *w : nearby_walls)
+  {
+    std::cout << w->writeStatus() << std::endl;
+    createLineAngle(x, y, w, lineAngles);
+    std::cout << "The size of lineAngles is: " << lineAngles.size() << std::endl;
+    std::cout << "minAngle " << w->minAngleTo(x,y) << std::endl;
+    std::cout << "maxAngle " << w->maxAngleTo(x,y) << std::endl;
+  }
+  for (LineAngle* la: lineAngles)
+    std::cout << la->writeStatus() << std::endl;
 
   out += "bot " + to_string(x) + " " + to_string(y) + " " + to_string(bot->getcoinCount()) + "\n";
   for (IElem *el : nearby)
@@ -1264,7 +1364,7 @@ int main(int argc, char **argv)
     if (argc == 2)
     {
       // Game 1, initialize maze, players (w/ subprocesses), etc
-      Game game("mazepool/0.maze", argv[1]);
+      Game game("mazepool/custom.maze", argv[1]);
 
       // Short pause to let subprocesses boot up
       this_thread::sleep_for(chrono::milliseconds(250));
