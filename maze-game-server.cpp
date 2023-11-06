@@ -601,8 +601,8 @@ string Robot::writeStatus() const
   return string("opponent ") + to_string(getX()) + " " + to_string(getY());
 }
 
-LineAngle::LineAngle(const Line* _line, double minAngle, double maxAngle)
-  : line(_line), minAngle(minAngle), maxAngle(maxAngle) {}
+LineAngle::LineAngle(Line *_line, double minAngle, double maxAngle)
+    : line(_line), minAngle(minAngle), maxAngle(maxAngle) {}
 
 LineAngle::~LineAngle() {}
 
@@ -934,7 +934,7 @@ void Game::renderFrame(set<IElem *> &visible)
                            gameX(11),
                            gameY(11),
                            players[0]->getName() + " " + std::to_string(players[0]->getflagCount()) + " Flags",
-                           "1-Player Capture The Flag",
+                           "Capture Collect 1-player",
                            players[0]->getLog(),
                            vector<string>());
   else
@@ -1123,7 +1123,7 @@ Game::~Game()
   cout << "reached end of ~Game" << endl;
 }
 
-double Game::elem_dist(double x, double y,const Line* el)
+double Game::elem_dist(double x, double y, Line *el)
 {
   double cx, cy;
   el->midPoint(cx, cy);
@@ -1131,47 +1131,51 @@ double Game::elem_dist(double x, double y,const Line* el)
 }
 // orders the lines by distance to the midpoint of the line
 // if the distances are the same, order by angle to the midpoint
-double Game::elem_rad_dist(double x, double y, const Line* el0, const Line* el1)
+double Game::elem_rad_dist(double x, double y, const LineAngle *el0, const LineAngle *el1)
 {
-  double el0_dist = elem_dist(x, y, el0);
-  double el1_dist = elem_dist(x, y, el1);
+  double el0_dist = elem_dist(x, y, el0->line);
+  double el1_dist = elem_dist(x, y, el1->line);
   if (el0_dist == el1_dist)
   {
-    double el0_min = el0->midAngleTo(x, y);
-    double el1_min = el1->midAngleTo(x, y);
+    double el0_min = (el0->minAngle + el0->maxAngle) / 2.0;
+    double el1_min = (el1->minAngle + el1->maxAngle) / 2.0;
     return el0_min < el1_min;
   }
   else
     return el0_dist < el1_dist;
 }
 
-void Game::createLineAngle(double x, double y, const Line* line, set<LineAngle*, function<bool(const LineAngle *fst, const LineAngle *snd)>> &lineAngles)
+void Game::createLineAngle(double x, double y, Line *line, set<const LineAngle *> &addSet, set<const LineAngle *> &removeSet)
+// void Game::createLineAngle(double x, double y, const Line* line, set<LineAngle*, function<bool(LineAngle *fst, LineAngle *snd)>> &lineAngles)
 {
   double minAngle = line->minAngleTo(x, y);
   double maxAngle = line->maxAngleTo(x, y);
-  std::cout << "Inside the createLineAngle, min Angle: " << minAngle << " maxAngle: " << maxAngle << std::endl;
-  if(minAngle > maxAngle)
+  // std::cout << "Inside the createlineangle function" << std::endl;
+  // std::cout << "The addSet size is: " << addSet.size() << std::endl;
+  if (minAngle > maxAngle)
   {
-    lineAngles.insert(new LineAngle(line, minAngle, M_PI));
-    lineAngles.insert(new LineAngle(line, -M_PI, maxAngle));
+    addSet.insert(new LineAngle(line, minAngle, M_PI));
+    addSet.insert(new LineAngle(line, -M_PI, maxAngle));
   }
   else if(minAngle < maxAngle)
-    lineAngles.insert(new LineAngle(line, minAngle, maxAngle));
+    addSet.insert(new LineAngle(line, minAngle, maxAngle));
   return;
 }
 
-void Game::splitLineAngle(const LineAngle* la0, const LineAngle* la1, set<const LineAngle*> &lineAngles)
+void Game::splitLineAngle(const LineAngle *la0, const LineAngle *la1, set<const LineAngle *> &addSet, set<const LineAngle *> &removeSet)
 {
   double a = la0->minAngle, b = la0->maxAngle, c = la1->minAngle, d = la1->maxAngle;
-  if(b-c>0 and d-a>0) // means there is overlap, and it is not a point
+  // std::cout << "a: " << a << "b: " << b << "c: " << c << "d: " << d << std::endl;
+  if (b - c > 0 && d - a > 0) // means there is overlap, and it is not a point
   {
-    double oa_min = max(a,c);
-    double oa_max = min(b,d);
-    if(oa_max < d)
-      lineAngles.insert(new LineAngle(la1->line, oa_max, d));
-    if(oa_min > c)
-      lineAngles.insert(new LineAngle(la1->line, c, oa_min));
-    lineAngles.erase(la1);
+    // std::cout << "Inside the condition" << std::endl;
+    double oa_min = max(a, c);
+    double oa_max = min(b, d);
+    if (c < oa_min)
+      addSet.insert(new LineAngle(la1->line, c, oa_min));
+    if (d > oa_max)
+      addSet.insert(new LineAngle(la1->line, oa_max, d));
+    removeSet.insert(la1);
   }
   return;
 }
@@ -1182,17 +1186,14 @@ string Game::writeRenderViewFrom(Robot *bot, set<IElem *> &visible)
   double x = bot->getX();
   double y = bot->getY();
 
-  auto rad_dist = [x, y, this](const Line *el0, const Line *el1)
-  {
-    return elem_rad_dist(x, y, el0, el1);
-  };
   auto line_angle_dist = [x, y, this](const LineAngle *la0, const LineAngle *la1)
   {
-    return elem_rad_dist(x, y, la0->line, la0->line);
+    return elem_rad_dist(x, y, la0, la1);
   };
 
-  set<const Line *, function<bool(const Line *fst, const Line *snd)>> nearby_walls(rad_dist);
-  set<IElem*> nearby;
+  set<Line *> nearby_walls;
+  set<const LineAngle *, function<bool(const LineAngle *fst, const LineAngle *snd)>> lineAngles(line_angle_dist);
+  set<IElem *> nearby;
   for (Robot *pl : players)
   {
     if (pl != bot)
@@ -1206,31 +1207,67 @@ string Game::writeRenderViewFrom(Robot *bot, set<IElem *> &visible)
       nearby.insert(obj);
     visible.insert(obj);
   }
-  int w_range = 2;
+  int w_range = 5;
   for (int i = max((int)x - w_range, 0); i <= min((int)x + w_range, tileW); ++i)
     for (int j = max((int)y - w_range, 0); j <= min((int)y + w_range, tileH); ++j)
       for (Line *w : Walls(i, j))
       {
         nearby_walls.insert(w);
-        nearby.insert(w);
-        visible.insert(w);
       }
-  set<LineAngle *, function<bool(const LineAngle *fst, const LineAngle *snd)>> lineAngles(line_angle_dist);
-  for (const Line *w : nearby_walls)
+  set<const LineAngle *> removeSet;
+  set<const LineAngle *> addSet;
+  set<const LineAngle *> finalSet;
+  // converting all the lines to lineangle objects, splitting the required ones.
+  for (Line *w : nearby_walls)
+    createLineAngle(x, y, w, addSet, removeSet);
+
+  for (const LineAngle *la : addSet)
   {
-    std::cout << w->writeStatus() << std::endl;
-    createLineAngle(x, y, w, lineAngles);
-    std::cout << "The size of lineAngles is: " << lineAngles.size() << std::endl;
-    std::cout << "minAngle " << w->minAngleTo(x,y) << std::endl;
-    std::cout << "maxAngle " << w->maxAngleTo(x,y) << std::endl;
+    lineAngles.insert(la);
   }
-  for (LineAngle* la: lineAngles)
-    std::cout << la->writeStatus() << std::endl;
+  // std::cout << "Size of lineAngles: " << lineAngles.size() << std::endl;
+  while (lineAngles.size() > 0)
+  {
+    addSet.clear();
+    removeSet.clear();
+    const LineAngle *cur_la = *lineAngles.begin(); // get the first element
+    finalSet.insert(cur_la);                         // adding current element to addSet
+    lineAngles.erase(cur_la);                      // delete the first element
+
+    for (const LineAngle *la : lineAngles)
+      splitLineAngle(cur_la, la, addSet, removeSet);
+    // std::cout << "The curent line" << cur_la->writeStatus() << std::endl;
+    // std::cout << "The lineAngles:" << std::endl;
+    // for (const LineAngle *la : lineAngles)
+    //   std::cout << la->writeStatus() << std::endl;
+    // std::cout << "The addSet:" << std::endl;
+    // for (const LineAngle *la : addSet)
+    //   std::cout << la->writeStatus() << std::endl;
+    // std::cout << "The removeSet:" << std::endl;
+    // for (const LineAngle *la : removeSet)
+    //   std::cout << la->writeStatus() << std::endl;
+    // removing all the lineangle objects from lineAngles set
+    for (const LineAngle *la : removeSet)
+      lineAngles.erase(la);
+    // adding all the lineangle objects to lineAngles set
+    for (const LineAngle *la : addSet)
+      lineAngles.insert(la);
+    // std::cout << "the size of lineAngles: " << lineAngles.size() << std::endl;
+  }
+
+  // std::cout << "The final stuff" << std::endl;
+  // for (const LineAngle *la : finalSet)
+  //   std::cout << la->writeStatus() << std::endl;
 
   out += "bot " + to_string(x) + " " + to_string(y) + " " + to_string(bot->getcoinCount()) + "\n";
   for (IElem *el : nearby)
   {
     out += el->writeStatus() + "\n";
+  }
+  for (const LineAngle *la : finalSet)
+  {
+    out += la->line->writeStatus() + "\n";
+    visible.insert(la->line);
   }
   return out;
 }
@@ -1364,7 +1401,7 @@ int main(int argc, char **argv)
     if (argc == 2)
     {
       // Game 1, initialize maze, players (w/ subprocesses), etc
-      Game game("mazepool/custom.maze", argv[1]);
+      Game game("mazepool/0.maze", argv[1]);
 
       // Short pause to let subprocesses boot up
       this_thread::sleep_for(chrono::milliseconds(250));

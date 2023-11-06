@@ -34,7 +34,7 @@ using namespace boost::process;
 
 #define frame_ms 600
 #define frame_per_sec 18
-#define gamelimit_sec 10
+#define gamelimit_sec 60
 #define framelimit (gamelimit_sec * frame_per_sec)
 
 #define gameX(x) (15 + x * ((renderW - 30.0) / tileW))
@@ -338,10 +338,10 @@ public:
 class LineAngle
 {
   public:
-    const Line *const line;
+    Line * line;
     const double minAngle;
     const double maxAngle;
-    LineAngle(const Line *_line, double minAngle, double maxAngle);
+    LineAngle(Line *_line, double minAngle, double maxAngle);
     ~LineAngle();
     string writeStatus() const;
 };
@@ -412,13 +412,14 @@ private:
 
   void addCoins(vector<IElem *> &objects);
 
-  double elem_dist(double x, double y,const Line *el);
+  double elem_dist(double x, double y,Line *el);
 
-  double elem_rad_dist(double x, double y, const Line *el0, const Line *el1);
+  double elem_rad_dist(double x, double y, const LineAngle *el0, const LineAngle *el1);
 
-  void createLineAngle(double x, double y, const Line* line, set<LineAngle*, function<bool(const LineAngle *fst, const LineAngle *snd)>> &lineAngles);
+  void createLineAngle(double x, double y, Line* line, set<const LineAngle*> &addSet, set<const LineAngle*> &removeSet);
+  // void createLineAngle(double x, double y, const Line* line, set<LineAngle*> &lineAngles);
 
-  void splitLineAngle(const LineAngle* la0, const LineAngle* la1, set<const LineAngle*> &lineAngles);
+  void splitLineAngle(const LineAngle* la0, const LineAngle* la1, set<const LineAngle*> &addSet, set<const LineAngle*> &removeSet);
 
 public:
   Game(string mazepath, string agentcmd);
