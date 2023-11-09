@@ -34,7 +34,7 @@ using namespace boost::process;
 
 #define frame_ms 600
 #define frame_per_sec 18
-#define gamelimit_sec 60
+#define gamelimit_sec 240
 #define framelimit (gamelimit_sec * frame_per_sec)
 
 #define gameX(x) (15 + x * ((renderW - 30.0) / tileW))
