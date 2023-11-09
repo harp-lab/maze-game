@@ -49,8 +49,8 @@ using namespace boost::process;
 #define log_len 16
 #define log_char_len 24
 
-constexpr int TWALL_COST = 3; //coins
-constexpr int TWALL_DURATION = 5; //seconds
+constexpr int TWALL_COST = 3;     // coins
+constexpr int TWALL_DURATION = 15; // seconds
 
 #define verbose true
 
@@ -158,7 +158,7 @@ class TWall : public Line
 private:
   bool visible;
   int framecount;
-  string color[5] = {"#dc1c13","#ea4c46","#f07470","#f1959b","#f6bdc0"};
+  string color[5] = {"#dc1c13", "#ea4c46", "#f07470", "#f1959b", "#f6bdc0"};
 
 public:
   TWall(double x0, double y0, double x1, double y1);
@@ -266,11 +266,9 @@ public:
 
 // are shot by the robot, and travel in a straight line towards a target from the robot.
 
-
 class Robot : public Circle
 {
 private:
-  Image greenbot[45];
   bool isgreen;
   int botframe;
   string name;
@@ -296,6 +294,8 @@ private:
   static void readloop(Robot *self);
 
 public:
+  Image greenbot[45];
+  int total_coin_collected;
   Robot(string cmd, double _x, double _y, Game *_game, bool isgreen = true);
   virtual ~Robot();
 
@@ -322,13 +322,13 @@ public:
 
 class LineAngle
 {
-  public:
-    Line * line;
-    const double minAngle;
-    const double maxAngle;
-    LineAngle(Line *_line, double minAngle, double maxAngle);
-    ~LineAngle();
-    string writeStatus() const;
+public:
+  Line *line;
+  const double minAngle;
+  const double maxAngle;
+  LineAngle(Line *_line, double minAngle, double maxAngle);
+  ~LineAngle();
+  string writeStatus() const;
 };
 
 class Game
@@ -345,7 +345,7 @@ private:
   unsigned long long starttime;
   unsigned long long frametime;
 
-  static Game* game_singleton;
+  static Game *game_singleton;
 
   class RenderMessage
   {
@@ -396,18 +396,20 @@ private:
 
   void addCoins(vector<IElem *> &objects);
 
-  double elem_dist(double x, double y,Line *el);
+  double elem_dist(double x, double y, Line *el);
 
   double elem_rad_dist(double x, double y, const LineAngle *el0, const LineAngle *el1);
 
-  void createLineAngle(double x, double y, Line* line, set<const LineAngle*> &addSet, set<const LineAngle*> &removeSet);
+  void createLineAngle(double x, double y, Line *line, set<const LineAngle *> &addSet, set<const LineAngle *> &removeSet);
   // void createLineAngle(double x, double y, const Line* line, set<LineAngle*> &lineAngles);
 
-  void splitLineAngle(const LineAngle* la0, const LineAngle* la1, set<const LineAngle*> &addSet, set<const LineAngle*> &removeSet);
-  
+  void splitLineAngle(const LineAngle *la0, const LineAngle *la1, set<const LineAngle *> &addSet, set<const LineAngle *> &removeSet);
+
   bool isBlocked(double x0, double y0, double x1, double y1, set<const LineAngle *> &lineAngles);
 
+  void winningScreen();
 
+  int getWinner();
 
 public:
   Game(string mazepath, string agentcmd);
@@ -416,7 +418,7 @@ public:
 
   ~Game();
 
-  static Game* getGame();
+  static Game *getGame();
 
   string writeRenderViewFrom(Robot *bot, set<IElem *> &visible);
 

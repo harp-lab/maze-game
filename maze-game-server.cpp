@@ -344,7 +344,6 @@ void Coin::notify(Circle *circ)
 
 void Coin::captured()
 {
-  // start fade-out animation
   if (visible == true)
   {
     visible = false;
@@ -358,28 +357,6 @@ string Coin::writeStatus() const
 {
   return "coin " + to_string(getX()) + " " + to_string(getY());
 }
-
-// SnowBall::SnowBall(double _x, double _y, Robot* _bot)
-//           : Circle(_x, _y, 0.42, 0.0),bot(_bot),
-//             framecount(0), visible(true),
-//             snowballimage(Image('img/snowball.png')){}
-
-// bool SnowBall::isvisible() const { return visible; }
-
-// void SnowBall::drawTo(Image &canvas)
-// {
-//   if(visible)
-//   {
-//     framecount++;
-//     Image img(snowballimage);
-//     canvas.composite(img, gameX(getX()) - 64, gameY(getY()) - 64, OverCompositeOp);
-//     if(framecount > 54)
-//     {
-//       visible = false;
-//       framecount = 0;
-//     }
-//   }
-// }
 
 // Run in each ctor as dedicated thread for communication
 void Robot::readloop(Robot *self)
@@ -407,7 +384,7 @@ Robot::Robot(string cmd, double _x, double _y, Game *_game, bool isgreen)
       greenbot{}, botframe(0), name(), isgreen(isgreen),
       tx(_x), ty(_y), homex(_x), homey(_y), game(_game),
       log(), lognext(0), isFlagCaptured(false), flagcount(0), coincount(0),
-      childout(),
+      childout(),total_coin_collected(0),
       childin(),
       proc(cmd.c_str(), std_out > childout, std_in < childin),
       commands(32 * 1024),
@@ -612,18 +589,18 @@ void Robot::notify(Circle *flag_or_home)
   {
     isFlagCaptured = true;
     flagCaptured = flag;
-    flagcount++;
     flag->captured();
   }
   else if (home && home->getX() == homex && home->getY() == homey && isFlagCaptured == true)
   {
+    flagcount++;
     flagCaptured->returnBack();
     isFlagCaptured = false;
   }
   else if (coin && coin->isvisible())
   {
-    // std::cout << "Inside the robot notify for a coin" << std::endl;
     coincount++;
+    total_coin_collected++;
     coin->captured();
   }
 }
@@ -831,8 +808,7 @@ void Game::renderloop3(Game *self)
                               WestGravity);
 
       // Remaining work goes to last stage for PNG encoding
-      while (!self->to_renderer[4]->push(msg))
-        ;
+      while (!self->to_renderer[4]->push(msg));
       framecount++;
     }
     else
@@ -1017,6 +993,74 @@ void Game::removeTWall(TWall *twall)
     wall_vec.erase(it);
   }
   delete twall;
+}
+
+int Game::getWinner()
+{
+  Robot* player1 = players.at(0);
+  Robot* player2 = players.at(1);
+  if(player1->getflagCount()==player2->getflagCount())
+  {
+    if(player1->total_coin_collected == player2->total_coin_collected)
+    {
+      return -1;
+    }
+    else
+      return player1->total_coin_collected > player2->total_coin_collected ? 0 : 1;
+  }
+  else
+    return player1->getflagCount() > player2->getflagCount() ? 0 : 1;
+}
+
+// adds 1 sec of worth of frames to the renderring
+void Game::winningScreen()
+{
+  Image final_img("img/bgtexture.png");  
+  final_img.font("helvetica");
+  final_img.strokeColor(Color("black"));
+  final_img.fillColor(Color("black"));
+  final_img.fontPointsize(100);
+  int winner = getWinner();
+  // winner = 0;
+  std::string winner_str = winner == -1 ? "==" : "Winner";
+  // std::string winner_str = "Winner";
+  // std::string color_to_pick = winner == -1 ? "black" : winner == 0 ? "green" : "red";
+  bool Tie = winner == -1 ? true : false;
+  // final_img.strokeColor(Color(color_to_pick));
+  // final_img.fillColor(Color(color_to_pick));
+  int hoz = 675;
+  if(Tie)
+    final_img.annotate(winner_str,
+                        Geometry(350, 100, hoz + 145, 500),
+                        WestGravity);
+  else
+    final_img.annotate(winner_str,
+                        Geometry(350, 100, hoz + 85, 500),
+                        WestGravity);
+
+  final_img.fontPointsize(40);
+  final_img.annotate(players[0]->getName()+" captured " + to_string(players[0]->getflagCount())+" Flags & "+ to_string(players[0]->total_coin_collected) + " Coins",
+                      Geometry(350, 50, hoz-70, 590),
+                      WestGravity);  
+
+  final_img.annotate(players[1]->getName()+" captured " + to_string(players[1]->getflagCount())+" Flags & "+ to_string(players[1]->total_coin_collected) + " Coins",
+                      Geometry(350, 50, hoz-70, 640),
+                      WestGravity);
+    for(int i=0;i<16;i++)
+    {
+      Image temp_img = final_img; 
+      if(!Tie)                     
+        temp_img.composite(players.at(winner)->greenbot[i], 850, 350, OverCompositeOp);
+      else{
+        temp_img.composite(players.at(0)->greenbot[i], hoz + 50, 350, OverCompositeOp);
+        temp_img.composite(players.at(1)->greenbot[i], hoz + 225, 350, OverCompositeOp);
+      }
+      string countstr = to_string(framecount);
+      framecount++;
+      while (countstr.size() < 7)
+        countstr = "0" + countstr;
+      temp_img.write(string("out/frame") + countstr + string(".png"));
+    }
 }
 
 Game::Game(string mazepath, string agentcmd)
@@ -1351,9 +1395,6 @@ void Game::play2()
     // order of players, meaning one player's moves will be processed before the other
     for (Robot *bot : players)
     {
-      // double px = bot->getX();
-      // double py = bot->getY();
-
       // Send bot its view and process its actions
       bot->play(writeRenderViewFrom(bot, visible));
 
@@ -1389,6 +1430,7 @@ void Game::play2()
       if (mytime() - frametime < frame_ms - 125)
         this_thread::sleep_for(chrono::milliseconds(frame_ms - (mytime() - frametime) - 75));
   }
+  winningScreen();
 }
 
 // main
@@ -1423,9 +1465,6 @@ int main(int argc, char **argv)
       // Game 2, intialize maze, players (w/ subprocesses), etc
       Game game("mazepool/0.maze", argv[1], argv[2]);
 
-      // this_thread::sleep_for(chrono::milliseconds(250));
-
-      // // Start simulating the game
       game.play2();
       std::cout << "Beautiful exit" << std::endl;
     }
