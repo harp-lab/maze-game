@@ -20,6 +20,8 @@ Line::Line(const Line &ln)
 
 double Line::getX0() const { return data[0]; }
 double Line::getY0() const { return data[1]; }
+double Line::getX() const { return data[0]; }
+double Line::getY() const { return data[1]; }
 double Line::getX1() const { return data[2]; }
 double Line::getY1() const { return data[3]; }
 
@@ -128,22 +130,22 @@ void TWall::drawTo(Image &canvas)
 {
   if (visible == true)
   {
-    int m = ((double)framecount / 101) * 5;
-    std::cout << "The frame count is: " << framecount << "m is " << m << std::endl;
+    int m = ((double)framecount / ((frame_per_sec * TWALL_DURATION)+1)) * 5;
+    std::cout << "The frame count is: " << framecount << " m is " << m << std::endl;
     canvas.strokeWidth(15);
     canvas.strokeColor(Color(color[m]));
     Line::drawTo(canvas);
     canvas.strokeWidth(11);
     canvas.strokeColor(Color("#000000"));
     framecount++;
-    if (framecount > 100)
+    if (framecount > (frame_per_sec * TWALL_DURATION))
       Game::getGame()->removeTWall(this);
   }
 }
 
 string TWall::writeStatus() const
 {
-  return string("twall ") + to_string(getX0()) + " " + to_string(getY0()) + " " + to_string(getX1()) + " " + to_string(getY1()) + " " + to_string(framecount);
+  return string("twall ") + to_string(getX0()) + " " + to_string(getY0()) + " " + to_string(getX1()) + " " + to_string(getY1()) + " " + to_string(TWALL_DURATION - (framecount/frame_per_sec));
 }
 
 Circle::Circle(double _x, double _y, double _r, double _maxv)
@@ -305,7 +307,7 @@ string Flag::writeStatus() const
 
 Coin::Coin(double _x, double _y)
     : Circle(_x, _y, 0.42, 0.0),
-      framecount(0), visible(true),
+      framecount(rand() % 9), visible(true),
       coinimage{}
 {
   Image fullcoinimage = Image("img/coin.png");
@@ -539,13 +541,45 @@ void Robot::play(string view)
       string data = cmd.substr(6, cmd.size() - 6);
       std::vector<std::string> result;
       boost::split(result, data, boost::is_any_of(" "));
-      double x = stod(result[0]);
-      double y = stod(result[1]);
-      string wall_dir = result[2];
-      double dist = sqrt((x - getX()) * (x - getX()) + (y - getY()) * (y - getY()));
-      if (coincount >= TWALL_COST && dist <= 2.0)
+      int _x = stoi(result[0]);
+      int _y = stoi(result[1]);
+      string dirn = result[2];
+      double x0, y0, x1, y1;
+      if (dirn == "l") // left
       {
-        game->addTWall(x, y, wall_dir);
+        x0 = _x;
+        y0 = _y;
+        x1 = _x;
+        y1 = _y + 1;
+      }
+      else if (dirn == "r") // right
+      {
+        x0 = _x + 1;
+        y0 = _y;
+        x1 = _x + 1;
+        y1 = _y + 1;
+      }
+      else if (dirn == "u") // up
+      {
+        x0 = _x;
+        y0 = _y;
+        x1 = _x + 1;
+        y1 = _y;
+      }
+      else if (dirn == "d") // down
+      {
+        x0 = _x;
+        y0 = _y + 1;
+        x1 = _x + 1;
+        y1 = _y + 1;
+      }
+      else
+        myerror("Invalid direction for twall");
+      // should be in the same tile
+      std::cout << "getX(): " << floor(getX()) << " x0: " << x0 << " getY(): " << floor(getY()) << " y0: " << y0 << std::endl;
+      if (coincount >= TWALL_COST && floor(getX())==_x && floor(getY())==_y && Game::getGame()->isWall(x0, y0, x1, y1) == false)
+      {
+        game->addTWall(x0, y0, x1, y1);
         coincount -= TWALL_COST;
       }
     }
@@ -740,15 +774,17 @@ void Game::renderloop3(Game *self)
       boost::split(bot1_scores, msg->name1, boost::is_any_of(" "));
       // Names
       msg->screen->fontPointsize(40);
-      msg->screen->annotate(bot0_scores.at(0),
+      msg->screen->annotate(bot0_scores.at(0).substr(0,20),
                             Geometry(1920 - 1080 - 15, 50, 1080 + 7, dsz + 15),
                             WestGravity);
-      msg->screen->annotate(bot1_scores.at(0),
+      msg->screen->annotate(bot1_scores.at(0).substr(0,20),
                             Geometry(1920 - 1080 - 15, 50, 1080 + 7, dsz + 15 + 49),
                             WestGravity);
       // 1080 + 7 + 10* (bot0_scores.at(0).length())
-      int flag_end0 = 1080 + 21 * (bot0_scores.at(0).length()) + 10;
-      int flag_end1 = 1080 + 21 * (bot1_scores.at(0).length()) + 10;
+      // int flag_end0 = 1080 + dsz + 21 * (bot0_scores.at(0).length()) + 10;
+      int flag_end0 = 1080 + 1.3 * dsz;
+      // int flag_end1 = 1080 + 21 * (bot1_scores.at(0).length()) + 10;
+      int flag_end1 = 1080 + 1.3 * dsz;
       Image greenflag("img/greenflag0.png");
       greenflag.resize(Geometry(50, 50));
       msg->screen->composite(greenflag, flag_end0, dsz + 15, OverCompositeOp);
@@ -765,8 +801,9 @@ void Game::renderloop3(Game *self)
                             Geometry(1920 - 1080 - 15, 50, flag_end1 + 55, dsz + 15 + 49),
                             WestGravity);
 
-      int coin_end0 = flag_end0 + 55 + 21 * (bot0_scores.at(1).length());
-      int coin_end1 = flag_end1 + 55 + 21 * (bot1_scores.at(1).length());
+      int coin_end0 = flag_end0 + 55 + 25 * 2;
+      // int coin_end1 = flag_end1 + 55 + 21 * (bot1_scores.at(1).length());
+      int coin_end1 = flag_end1 + 55 + 25 * 2;
       Image coin("img/coin.png");
       coin.crop(Geometry(152, 150, 0, 0));
       coin.resize(Geometry(60, 60));
@@ -961,51 +998,23 @@ void Game::addCoins(vector<IElem *> &objects)
   }
 }
 
-void Game::addTWall(double _x, double _y, string dirn)
+void Game::addTWall(double x0, double y0, double x1, double y1)
 {
-  double x0, y0, x1, y1;
-  if (dirn == "l") // left
-  {
-    x0 = _x;
-    y0 = _y;
-    x1 = _x;
-    y1 = _y + 1;
-  }
-  else if (dirn == "r") // right
-  {
-    x0 = _x + 1;
-    y0 = _y;
-    x1 = _x + 1;
-    y1 = _y + 1;
-  }
-  else if (dirn == "u") // up
-  {
-    x0 = _x;
-    y0 = _y;
-    x1 = _x + 1;
-    y1 = _y;
-  }
-  else if (dirn == "d") // down
-  {
-    x0 = _x;
-    y0 = _y + 1;
-    x1 = _x + 1;
-    y1 = _y + 1;
-  }
-  else
-    myerror("Invalid direction for twall");
-  TWall *twall = new TWall(x0, y0, x1, y1);
-  objects.push_back(twall);
+  Line *twall = new TWall(x0, y0, x1, y1);
+  // Line *ln = new Line(x0, y0, x1, y1);
+  // Push onto appropriate tile
+  Walls(x0, y0).push_back(twall);
 }
 
 void Game::removeTWall(TWall *twall)
 {
-  auto it = find(objects.begin(), objects.end(),
-                 twall);
-
-  if (it != objects.end())
+  int x = twall->getX0();
+  int y = twall->getY0();
+  vector<Line* > &wall_vec = Walls(x, y);
+  auto it = std::find(wall_vec.begin(), wall_vec.end(), twall);
+  if (it != wall_vec.end())
   {
-    objects.erase(it);
+    wall_vec.erase(it);
   }
   delete twall;
 }
@@ -1150,14 +1159,12 @@ void Game::createLineAngle(double x, double y, Line *line, set<const LineAngle *
 {
   double minAngle = line->minAngleTo(x, y);
   double maxAngle = line->maxAngleTo(x, y);
-  // std::cout << "Inside the createlineangle function" << std::endl;
-  // std::cout << "The addSet size is: " << addSet.size() << std::endl;
   if (minAngle > maxAngle)
   {
     addSet.insert(new LineAngle(line, minAngle, M_PI));
     addSet.insert(new LineAngle(line, -M_PI, maxAngle));
   }
-  else if(minAngle < maxAngle)
+  else if (minAngle < maxAngle)
     addSet.insert(new LineAngle(line, minAngle, maxAngle));
   return;
 }
@@ -1165,10 +1172,8 @@ void Game::createLineAngle(double x, double y, Line *line, set<const LineAngle *
 void Game::splitLineAngle(const LineAngle *la0, const LineAngle *la1, set<const LineAngle *> &addSet, set<const LineAngle *> &removeSet)
 {
   double a = la0->minAngle, b = la0->maxAngle, c = la1->minAngle, d = la1->maxAngle;
-  // std::cout << "a: " << a << "b: " << b << "c: " << c << "d: " << d << std::endl;
   if (b - c > 0 && d - a > 0) // means there is overlap, and it is not a point
   {
-    // std::cout << "Inside the condition" << std::endl;
     double oa_min = max(a, c);
     double oa_max = min(b, d);
     if (c < oa_min)
@@ -1179,6 +1184,30 @@ void Game::splitLineAngle(const LineAngle *la0, const LineAngle *la1, set<const 
   }
   return;
 }
+
+bool Game::isBlocked(double x, double y, double x1, double y1, set<const LineAngle *> &lineAngles)
+{
+  double angle = atan2(y - y1, x1 - x);
+  for (const LineAngle *la : lineAngles)
+  {
+    if (la->minAngle <= angle && angle <= la->maxAngle)
+      return true;
+  }
+  return false;
+}
+
+bool Game::isWall(double x0, double y0, double x1, double y1)
+{ 
+  std::cout << "x0 : " << x0 << "y0 : " << y0 << std::endl;
+  for (Line* l : Walls(x0,y0))
+  {
+    std::cout << l->writeStatus() << std::endl;
+    if (l->getX0() == x0 && l->getY0() == y0 && l->getX1() == x1 && l->getY1() == y1)
+      return true;
+  }
+  return false;
+}
+
 
 string Game::writeRenderViewFrom(Robot *bot, set<IElem *> &visible)
 {
@@ -1194,26 +1223,12 @@ string Game::writeRenderViewFrom(Robot *bot, set<IElem *> &visible)
   set<Line *> nearby_walls;
   set<const LineAngle *, function<bool(const LineAngle *fst, const LineAngle *snd)>> lineAngles(line_angle_dist);
   set<IElem *> nearby;
-  for (Robot *pl : players)
-  {
-    if (pl != bot)
-      nearby.insert(pl);
-    visible.insert(pl);
-  }
 
-  for (IElem *obj : objects)
-  {
-    if (obj->withinRange(x, y, 2))
-      nearby.insert(obj);
-    visible.insert(obj);
-  }
   int w_range = 5;
   for (int i = max((int)x - w_range, 0); i <= min((int)x + w_range, tileW); ++i)
     for (int j = max((int)y - w_range, 0); j <= min((int)y + w_range, tileH); ++j)
       for (Line *w : Walls(i, j))
-      {
         nearby_walls.insert(w);
-      }
   set<const LineAngle *> removeSet;
   set<const LineAngle *> addSet;
   set<const LineAngle *> finalSet;
@@ -1225,40 +1240,34 @@ string Game::writeRenderViewFrom(Robot *bot, set<IElem *> &visible)
   {
     lineAngles.insert(la);
   }
-  // std::cout << "Size of lineAngles: " << lineAngles.size() << std::endl;
   while (lineAngles.size() > 0)
   {
     addSet.clear();
     removeSet.clear();
     const LineAngle *cur_la = *lineAngles.begin(); // get the first element
-    finalSet.insert(cur_la);                         // adding current element to addSet
+    finalSet.insert(cur_la);                       // adding current element to finalSet
     lineAngles.erase(cur_la);                      // delete the first element
 
     for (const LineAngle *la : lineAngles)
       splitLineAngle(cur_la, la, addSet, removeSet);
-    // std::cout << "The curent line" << cur_la->writeStatus() << std::endl;
-    // std::cout << "The lineAngles:" << std::endl;
-    // for (const LineAngle *la : lineAngles)
-    //   std::cout << la->writeStatus() << std::endl;
-    // std::cout << "The addSet:" << std::endl;
-    // for (const LineAngle *la : addSet)
-    //   std::cout << la->writeStatus() << std::endl;
-    // std::cout << "The removeSet:" << std::endl;
-    // for (const LineAngle *la : removeSet)
-    //   std::cout << la->writeStatus() << std::endl;
-    // removing all the lineangle objects from lineAngles set
     for (const LineAngle *la : removeSet)
       lineAngles.erase(la);
-    // adding all the lineangle objects to lineAngles set
     for (const LineAngle *la : addSet)
       lineAngles.insert(la);
-    // std::cout << "the size of lineAngles: " << lineAngles.size() << std::endl;
+  }
+  for (Robot *pl : players)
+  {
+    if (pl != bot && pl->withinRange(x, y, 5) && !isBlocked(x, y, pl->getX(), pl->getY(), finalSet))
+      nearby.insert(pl);
+    visible.insert(pl);
   }
 
-  // std::cout << "The final stuff" << std::endl;
-  // for (const LineAngle *la : finalSet)
-  //   std::cout << la->writeStatus() << std::endl;
-
+  for (IElem *obj : objects)
+  {
+    if (obj->withinRange(x, y, 5) && !isBlocked(x, y, obj->getX(), obj->getY(), finalSet))
+      nearby.insert(obj);
+    visible.insert(obj);
+  }
   out += "bot " + to_string(x) + " " + to_string(y) + " " + to_string(bot->getcoinCount()) + "\n";
   for (IElem *el : nearby)
   {

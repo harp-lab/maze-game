@@ -49,7 +49,7 @@ using namespace boost::process;
 #define log_len 16
 #define log_char_len 24
 
-constexpr int TWALL_COST = 0; //coins
+constexpr int TWALL_COST = 3; //coins
 constexpr int TWALL_DURATION = 5; //seconds
 
 #define verbose true
@@ -96,6 +96,8 @@ public:
   virtual bool withinRange(double, double, double) const = 0;
   virtual double minAngleTo(double, double) const = 0;
   virtual double maxAngleTo(double, double) const = 0;
+  virtual double getX() const = 0;
+  virtual double getY() const = 0;
   virtual void visit(IElem *) = 0;
   virtual void notify(Line *) = 0;
   virtual void notify(Circle *) = 0;
@@ -115,6 +117,8 @@ public:
 
   double getX0() const;
   double getY0() const;
+  virtual double getX() const;
+  virtual double getY() const;
   double getX1() const;
   double getY1() const;
 
@@ -261,26 +265,7 @@ public:
 };
 
 // are shot by the robot, and travel in a straight line towards a target from the robot.
-class SnowBall : public Circle
-{
-private:
-  int framecount;
-  Image snowballimage;
-  bool visible;
-  Robot* bot;
 
-public:
-  SnowBall(double _x = 10.5, double _y = 10.5);
-  ~SnowBall();
-
-  bool isvisible() const;
-
-  void drawTo(Image &canvas);
-
-  virtual void notify(Circle *circ);
-
-  string writeStatus() const;
-};
 
 class Robot : public Circle
 {
@@ -353,7 +338,6 @@ private:
   Image mazeimage, bgimage;
 
   vector<Line *> walls[(tileW + 1) * (tileH + 1)];
-
   vector<Robot *> players;
   vector<IElem *> objects;
 
@@ -420,6 +404,10 @@ private:
   // void createLineAngle(double x, double y, const Line* line, set<LineAngle*> &lineAngles);
 
   void splitLineAngle(const LineAngle* la0, const LineAngle* la1, set<const LineAngle*> &addSet, set<const LineAngle*> &removeSet);
+  
+  bool isBlocked(double x0, double y0, double x1, double y1, set<const LineAngle *> &lineAngles);
+
+
 
 public:
   Game(string mazepath, string agentcmd);
@@ -432,9 +420,11 @@ public:
 
   string writeRenderViewFrom(Robot *bot, set<IElem *> &visible);
 
-  void addTWall(double x0, double y0, string dirn);
+  void addTWall(double x0, double y0, double x1, double y1);
 
   void removeTWall(TWall *twall);
+
+  bool isWall(double x0, double y0, double x1, double y1);
 
   void play1();
 
