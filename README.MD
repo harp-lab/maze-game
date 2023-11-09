@@ -26,6 +26,8 @@ A server that lets us create a maze based on a [text file](./mazepool/0.maze) wi
 ## Details
 -  server can be run with `./server 'program/agent to run'` and communicates with the program passed to it using std-in/out.
    * example: `./server 'python dfbot.py'`
+- For two players
+  * It is `./server 'python3 agent1.py' 'python3 agent2.py'`
 -  sends the sense data and bot location over std-in to be read and processed by the agent/program.
 -  The agent should write the direction for the bot to move towards to std-out, which will be read by the server and bot will be moved, updated location of the bot is sent back to agent.
 -  All the movements of the bot are captured into frames and stitched together into a video.
@@ -36,8 +38,17 @@ A server that lets us create a maze based on a [text file](./mazepool/0.maze) wi
   - `wall x0 y0 x1 y1`
   - example: `wall 3.000000 1.000000 3.000000 2.000000`
 - updated location of the bot
-  - `bot x y`
-  - example: `bot 2.014900 1.510483`
+  - `bot x y num_coins`
+  - example: `bot 2.014900 1.510483 3`
+#### Adversarial Two Player information
+- TWall
+  - A temporary wall can be created to block the opponent agent in its track
+  - This wall block the path for 15 seconds and costs 3 coins
+  - Can only be deployed onto one of the walls in the current cell
+  - `block tx ty [u|d|l|r]` example `block 1 2 d` creates bottom wall in the 1,2 cell
+- Coins
+  - Coins data is sent to the agent in the format
+  - `Coin x0 y0`, the agent just needs to pass through it to collect it.
 #### Agent to server
 - direction to move the bot is sent over stdout(printed) in this format
   - `toward x y`
