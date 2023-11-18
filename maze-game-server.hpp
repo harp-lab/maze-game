@@ -49,7 +49,7 @@ using namespace boost::process;
 #define log_len 16
 #define log_char_len 24
 
-constexpr int TWALL_COST = 3;     // coins
+constexpr int TWALL_COST = 6;     // coins
 constexpr int TWALL_DURATION = 15; // seconds
 
 #define verbose true
