@@ -43,7 +43,7 @@ A server that lets us create a maze based on a [text file](./mazepool/0.maze) wi
 #### Adversarial Two Player information
 - TWall
   - A temporary wall can be created to block the opponent agent in its track
-  - This wall block the path for 15 seconds and costs 3 coins
+  - This wall block the path for 15 seconds and costs 6 coins
   - Can only be deployed onto one of the walls in the current cell
   - `block tx ty [u|d|l|r]` example `block 1 2 d` creates bottom wall in the 1,2 cell
 - Coins
